@@ -2,3 +2,4 @@ node_modules/
 .sites-runtime/
 .local/
 *.tar.gz
+dist/client/
