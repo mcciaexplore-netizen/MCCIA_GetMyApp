@@ -3,3 +3,5 @@ node_modules/
 .local/
 *.tar.gz
 dist/client/
+.env*
+!.env.example

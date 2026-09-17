@@ -1,29 +1,45 @@
 # MCCIA GetMyApp
 
-A ten-application catalog with detail pages and app-development bookings.
+Animated AI Studio welcome page, ten-application catalog, application detail pages, two-step booking, and a protected availability editor.
 
-## Vercel deployment
+## Visitor and editor access
 
-The repository's `vercel.json` configures the framework as Other, runs `npm run build`, and publishes `dist/client`. The build copies only HTML, CSS, JavaScript, and the supplied logo into this public directory. Do not publish the entire `dist` directory: it also contains the Cloudflare Worker and database migration metadata.
+Visitors open `/` and can explore applications and book a session without an editor credential. The editor page is `/#/editor`. Editors sign in with the server-configured `EDITOR_ACCESS_KEY`; the key must be a randomly generated secret of at least 32 characters. It is held only in page memory and cleared on sign-out/reload. No default or hardcoded key is shipped. This is a shared editor credential, not individual email accounts.
 
-Redeploy the latest `main` commit after pulling this configuration. The deprecation and install-script warnings in the original log were not the missing-output-directory error.
+Editors can show/hide and activate/deactivate each of the four one-hour slots for a weekday. Hiding all four slots removes that day from visitor choices. Inactive visible slots cannot be booked. Changes apply across all ten apps. Existing bookings are never deleted. The booking endpoint rechecks availability at insertion time.
 
-### Booking backend limitation
+The official AI Studio artwork has not been supplied; the header currently uses a temporary text-based AI Studio mark. The supplied MCCIA logo is unchanged.
 
-Vercel currently serves the catalog and detail pages only. The existing `/api/availability` and `/api/bookings` handlers are Cloudflare Worker routes using a D1 `DB` binding; they are not Vercel Functions and are not deployed by this static output configuration. Booking on Vercel needs a compatible server API and a persistent database connection. Do not use a local file or browser storage as the production booking database. Until that backend is configured, use the existing Sites-hosted application for working bookings.
+## Vercel setup (required once)
 
-## Existing Cloudflare/Sites deployment
+1. Create a Supabase project, or use your existing project's SQL editor.
+2. Run `supabase/schema.sql`. It creates bookings and availability tables, enables row-level security, and restricts database access to the server role. The booking/save functions use a transaction lock to serialize competing schedule changes and bookings.
+3. Add these **server-side** environment variables in Vercel (Production and Preview as appropriate):
+   - `SUPABASE_URL`: your project URL.
+   - `SUPABASE_SECRET_KEY`: a Supabase secret API key (or legacy service-role key). Never expose this through a public/client environment variable.
+   - `EDITOR_ACCESS_KEY`: a unique random secret, at least 32 characters. Share it only with the studio editor. Generate one locally with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.
+4. Redeploy the latest GitHub commit. `vercel.json` publishes `dist/client`; the Vercel API function at `api/[...path].js` serves bookings and editor actions.
+5. Open `/#/editor` and sign in with your editor key. Select a weekday, adjust Display/Active checkboxes, and save.
 
-The build continues to emit `dist/server/index.js` and the existing D1 migrations for Sites. Its booking API and data are unchanged by the Vercel output-directory fix.
+Until these variables and the SQL schema are configured, the API returns a clear unavailable message and does not pretend to save bookings. The Supabase database starts empty; existing Sites/D1 bookings are not migrated automatically. Do not run both public booking systems as independent authorities for the same studio schedule.
+
+References: [Vercel Node functions](https://vercel.com/docs/functions/runtimes/node-js), [Supabase Data API](https://supabase.com/docs/guides/api).
 
 ## Local development
 
-Requires Node.js 22.18 or newer for the local SQLite preview.
+Requires Node.js 22.18 or newer. Copy `.env.example` to `.env` and set `EDITOR_ACCESS_KEY` for local editor access (Supabase is not needed locally).
 
 ```sh
 npm install
 npm run build
 npm run dev
+npm test
 ```
 
-The local preview starts at http://127.0.0.1:4174 and keeps its test database under ignored `.local/`. Run `npm test` for booking validation and double-booking checks.
+Local preview: http://127.0.0.1:4174. The SQLite test database is stored under ignored `.local/`. The developer preview applies the two known migrations without deleting existing records.
+
+## Existing Sites deployment
+
+The build continues to emit the Cloudflare Worker and generated D1 migrations. Sites uses its own D1 binding and needs `EDITOR_ACCESS_KEY` as a server secret for editor access. Vercel uses Supabase instead. Neither system stores authoritative bookings in browser storage.
+
+Motion pauses through the landing-page control and honors reduced-motion preferences. Date selection is paginated in groups of five; the booking layout is compact and allows natural overflow on unusually short displays or enlarged text rather than clipping controls.
