@@ -1,12 +1,12 @@
 # MCCIA GetMyApp
 
-Animated AI Studio welcome page, ten-application catalog, application detail pages, two-step booking, and a protected availability editor.
+Animated AI Studio welcome page, fifteen-application catalog, application detail pages, two-step booking, and a protected availability editor.
 
 ## Visitor and editor access
 
 Visitors open `/` and can explore applications and book a session without an editor credential. The editor page is `/#/editor`. Editors sign in with the server-configured `EDITOR_ACCESS_KEY`; the key must be a randomly generated secret of at least 32 characters. It is held only in page memory and cleared on sign-out/reload. No default or hardcoded key is shipped. This is a shared editor credential, not individual email accounts.
 
-Editors can show/hide and activate/deactivate each of the four one-hour slots for a weekday. Hiding all four slots removes that day from visitor choices. Inactive visible slots cannot be booked. Changes apply across all ten apps. Existing bookings are never deleted. The booking endpoint rechecks availability at insertion time.
+Editors can show/hide and activate/deactivate each of the four one-hour slots for a weekday. Hiding all four slots removes that day from visitor choices. Inactive visible slots cannot be booked. Changes apply across all fifteen apps. Existing bookings are never deleted. The booking endpoint rechecks availability at insertion time.
 
 The official AI Studio artwork has not been supplied; the header currently uses a temporary text-based AI Studio mark. The supplied MCCIA logo is unchanged.
 
