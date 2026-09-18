@@ -4,7 +4,7 @@ Animated AI Studio welcome page, fifteen-application catalog, application detail
 
 ## Visitor and editor access
 
-Visitors open `/` and can explore applications and book a session without an editor credential. The editor page is `/#/editor`. Editors sign in with the server-configured `EDITOR_ACCESS_KEY`; the key must be a randomly generated secret of at least 32 characters. It is held only in page memory and cleared on sign-out/reload. No default or hardcoded key is shipped. This is a shared editor credential, not individual email accounts.
+Visitors open `/` and can explore applications, choose a session, and generate a downloadable PNG session card without an editor credential. The current visitor flow does not submit a booking or send emails: contact details remain in page memory until refresh/close. The card includes name, phone, email, optional company, application, date, and time and is explicitly marked as not submitted or reserved. The booking API remains available for future integration; its database schema must be extended for phone numbers before reconnecting this flow. The editor page is `/#/editor`. Editors sign in with the server-configured `EDITOR_ACCESS_KEY`; the key must be a randomly generated secret of at least 32 characters. It is held only in page memory and cleared on sign-out/reload. No default or hardcoded key is shipped. This is a shared editor credential, not individual email accounts.
 
 Editors can show/hide and activate/deactivate each of the three one-hour slots for a scheduled date. Hiding all three slots removes that day from visitor choices. Inactive visible slots cannot be booked. Changes apply across all fifteen apps. Existing bookings are never deleted. The booking endpoint rechecks availability at insertion time.
 
@@ -42,8 +42,8 @@ Local preview: http://127.0.0.1:4174. The SQLite test database is stored under i
 
 The build continues to emit the Cloudflare Worker and generated D1 migrations. Sites uses its own D1 binding and needs `EDITOR_ACCESS_KEY` as a server secret for editor access. Vercel uses Supabase instead. Neither system stores authoritative bookings in browser storage.
 
-Motion pauses through the landing-page control and honors reduced-motion preferences. All eight scheduled dates and three time slots are displayed together; the booking layout is compact and allows natural overflow on unusually short displays or enlarged text rather than clipping controls.
+Landing motion plays automatically and honors reduced-motion preferences. The original landing composition fits the viewport on desktop, mobile, and landscape screens. All eight scheduled dates and three time slots are displayed together; the booking layout is compact and allows natural overflow on unusually short displays or enlarged text rather than clipping controls.
 
 ## Current schedule
 
-23, 24, 28, 29, 30 September and 1, 2, 3 October **2026**. Each date offers **10:30–11:30 AM, 12–1 PM, and 3–4 PM IST**. This includes Saturday, 3 October. When the database cannot be reached, the UI displays these as planned slots; confirmation still requires the live booking service.
+23, 24, 28, 29, 30 September and 1, 2, 3 October **2026**. Each date offers **10:30–11:30 AM, 12–1 PM, and 3–4 PM IST**. This includes Saturday, 3 October. When the database cannot be reached, the UI displays these as planned slots; visitors can still generate their local session card, which does not reserve the selected slot.
