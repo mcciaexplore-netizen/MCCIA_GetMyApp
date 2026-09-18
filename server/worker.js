@@ -1,16 +1,13 @@
 const validApps = new Set(['dispatch-flow','tendersetu','gst-reconciliation','card-scanner','social-media-planner','digital-profile-creator','mr-wasooli','hr-studio','stocklist','minicrm',"compliance-calender","yojanasetu","hisabtalk-ai","review-desk","production-saathi"]);
-const slots = ['11:00','12:00','14:30','15:30'];
+const slots = ['10:30','12:00','15:00'];
+const eventDates = ["2026-09-23","2026-09-24","2026-09-28","2026-09-29","2026-09-30","2026-10-01","2026-10-02","2026-10-03"];
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}
 export function isValidDate(date,now=new Date()){
- if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date))return false;
- const d=new Date(date+'T00:00:00+05:30');
- if(Number.isNaN(+d)||new Date(+d+19800000).toISOString().slice(0,10)!==date)return false;
- const day=new Date(date+'T12:00:00Z').getUTCDay();
  const today=new Date(+now+19800000).toISOString().slice(0,10);
- return day!==0&&day!==6&&date>=today&&+d<+now+90*86400000;
+ return eventDates.includes(date)&&date>=today;
 }
 export function validateBooking(b,now=new Date()){
- if(!b||typeof b!=='object'||!validApps.has(b.appId)||!isValidDate(b.date,now)||!slots.includes(b.slot))return 'Please choose a valid application, weekday and time.';
+ if(!b||typeof b!=='object'||!validApps.has(b.appId)||!isValidDate(b.date,now)||!slots.includes(b.slot))return 'Please choose a valid application, scheduled date and time.';
  if(+new Date(b.date+'T'+b.slot+':00+05:30')<=+now)return 'This slot has already started. Please choose a later slot.';
  if(typeof b.name!=='string'||b.name.trim().length<2||b.name.length>100)return 'Enter your full name (2–100 characters).';
  if(typeof b.email!=='string'||b.email.length>254||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email))return 'Enter a valid email address.';
@@ -31,7 +28,7 @@ export default {async fetch(request,env){
     if(diff!==0)return json({error:'Invalid editor access key.'},401);
     if(url.pathname==='/api/editor/session'&&request.method==='GET')return json({role:'editor'});
     if(url.pathname==='/api/editor/availability'&&request.method==='GET') {
-     const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose a weekday within the next 90 days.'},400);
+     const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled dates from 23 September to 3 October 2026.'},400);
      const records=await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all();
      const bookings=await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind(date).all();
      return json({slots:slots.map(time=>{const row=records.results.find(r=>r.slot===time);return {time,visible:row?!!row.visible:true,active:row?!!row.active:true,booked:bookings.results.some(r=>r.slot===time)}})});
@@ -39,19 +36,19 @@ export default {async fetch(request,env){
     if(url.pathname==='/api/editor/availability'&&request.method==='PUT'){
      if(request.headers.get('Origin')!==url.origin)return json({error:'Use the studio editor page.'},403);
      const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
-     if(!isValidDate(b.date)||!Array.isArray(b.slots)||b.slots.length!==4||new Set(b.slots.map(s=>s.time)).size!==4||b.slots.some(s=>!slots.includes(s.time)||typeof s.visible!=='boolean'||typeof s.active!=='boolean'))return json({error:'Invalid availability settings.'},400);
+     if(!isValidDate(b.date)||!Array.isArray(b.slots)||b.slots.length!==slots.length||new Set(b.slots.map(s=>s.time)).size!==slots.length||b.slots.some(s=>!slots.includes(s.time)||typeof s.visible!=='boolean'||typeof s.active!=='boolean'))return json({error:'Invalid availability settings.'},400);
      await db.batch(b.slots.map(s=>db.prepare('INSERT INTO availability (date, slot, visible, active) VALUES (?, ?, ?, ?) ON CONFLICT(date, slot) DO UPDATE SET visible=excluded.visible, active=excluded.active').bind(b.date,s.time,Number(s.visible),Number(s.active))));
      return json({saved:true});
     }
     return json({error:'Not found'},404);
    }
    if(url.pathname==='/api/schedule'&&request.method==='GET'){
-    const dates=[];const today=new Date(Date.now()+19800000);today.setUTCHours(0,0,0,0);for(let i=0;dates.length<20;i++){const day=new Date(+today+i*86400000);if(![0,6].includes(day.getUTCDay()))dates.push(day.toISOString().slice(0,10));}
+    const dates=eventDates.filter(date=>isValidDate(date));if(!dates.length)return json({days:[]});
     const rows=await db.prepare('SELECT date, slot, visible, active FROM availability WHERE date >= ? AND date <= ?').bind(dates[0],dates.at(-1)).all();
     return json({days:dates.map(date=>{const settings=slots.map(slot=>rows.results.find(r=>r.date===date&&r.slot===slot));return {date,visible:settings.some(r=>!r||r.visible),active:settings.some(r=>!r||(r.visible&&r.active))}}).filter(d=>d.visible)});
    }
    if(url.pathname==='/api/availability'&&request.method==='GET'){
-    const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose a weekday within the next 90 days.'},400);
+    const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled dates from 23 September to 3 October 2026.'},400);
     const result=await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind(date).all();
     const reserved=new Set(result.results.map(r=>r.slot));
     const settings=(await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all()).results;
