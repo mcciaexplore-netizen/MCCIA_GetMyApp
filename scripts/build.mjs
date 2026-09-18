@@ -9,6 +9,7 @@ for (const file of [...publicFiles.map(([file])=>file), 'mccia-logo.png']) {
   fs.copyFileSync('dist/'+file,'dist/client/'+file);
 }
 // Preserve the existing Cloudflare/Sites application and its booking database.
+fs.cpSync('dist/trailers','dist/client/trailers',{recursive:true});
 fs.mkdirSync('dist/server',{recursive:true});
 fs.mkdirSync('dist/.openai',{recursive:true});
 fs.writeFileSync('dist/server/index.js','const assets = '+JSON.stringify(assets)+';\n'+fs.readFileSync('server/worker.js','utf8'));

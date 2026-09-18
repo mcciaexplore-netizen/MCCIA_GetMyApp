@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { serveTrailer } from './trailer-media.mjs';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../dist/server/index.js';
@@ -7,4 +8,4 @@ const sqlite=new DatabaseSync('.local/bookings.sqlite');
 if(!sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='bookings'").get())sqlite.exec(fs.readFileSync('drizzle/0000_keen_tarantula.sql','utf8'));
 if(!sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='availability'").get())sqlite.exec(fs.readFileSync('drizzle/0001_abandoned_penance.sql','utf8'));
 const DB={async batch(statements){sqlite.exec('BEGIN');try{for(const statement of statements)await statement.run();sqlite.exec('COMMIT')}catch(e){sqlite.exec('ROLLBACK');throw e}},prepare(sql){return {bind(...values){return {async all(){return {results:sqlite.prepare(sql).all(...values)}},async run(){return sqlite.prepare(sql).run(...values)}}}}}};
-http.createServer(async(req,res)=>{try{const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=Buffer.concat(chunks);const request=new Request('http://127.0.0.1:4174'+req.url,{method:req.method,headers:req.headers,...(['GET','HEAD'].includes(req.method)?{}:{body})});const response=await worker.fetch(request,{DB,EDITOR_ACCESS_KEY:process.env.EDITOR_ACCESS_KEY});res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()))}catch{res.writeHead(500);res.end('Preview error')}}).listen(4174,'127.0.0.1',()=>console.log('MCCIA preview: http://127.0.0.1:4174'));
+http.createServer(async(req,res)=>{if(serveTrailer(req,res))return;try{const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=Buffer.concat(chunks);const request=new Request('http://127.0.0.1:4174'+req.url,{method:req.method,headers:req.headers,...(['GET','HEAD'].includes(req.method)?{}:{body})});const response=await worker.fetch(request,{DB,EDITOR_ACCESS_KEY:process.env.EDITOR_ACCESS_KEY});res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()))}catch{res.writeHead(500);res.end('Preview error')}}).listen(4174,'127.0.0.1',()=>console.log('MCCIA preview: http://127.0.0.1:4174'));

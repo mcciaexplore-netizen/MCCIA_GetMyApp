@@ -47,3 +47,9 @@ Landing motion plays automatically and honors reduced-motion preferences. The or
 ## Current schedule
 
 23, 24, 28, 29, 30 September and 1, 2, 3 October **2026**. Each date offers **10:30–11:30 AM, 12–1 PM, and 3–4 PM IST**. This includes Saturday, 3 October. When the database cannot be reached, the UI displays these as planned slots; visitors can still generate their local session card, which does not reserve the selected slot.
+
+## Application trailers
+
+Seven MP4 trailers are stored in dist/trailers and copied to the Vercel public build. The trailers mapping in dist/app.js selects the video for each application; add future files and mapping entries there. Only applications with a supplied video display a Trailer button. Playback opens in a keyboard-accessible dialog and stops when closed or navigating away. Local development supports video range requests for seeking. These binary assets are served by Vercel; the legacy embedded Sites worker does not bundle videos.
+
+Payment Followup Agent is the current public name. The internal mr-wasooli ID is retained to preserve existing links and booking records.
