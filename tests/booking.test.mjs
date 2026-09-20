@@ -4,44 +4,57 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import fs from 'node:fs';
 import worker,{validateBooking,isValidDate} from '../server/worker.js';
-const now=new Date('2026-09-17T04:00:00Z');
-const booking={appId:'stocklist',date:'2026-09-23',slot:'10:30',name:'Test User',email:'test@example.com',company:'Test'};
-test('scheduled dates, time, contact and past-date validation',()=>{assert.equal(validateBooking(booking,now),null);for(const change of [{date:'2026-09-19'},{date:'2026-09-20'},{slot:'13:00'},{slot:'16:30'},{email:'bad'},{appId:'unknown'},{date:'2026-02-31'},{date:'2026-09-16'}])assert.ok(validateBooking({...booking,...change},now));assert.equal(isValidDate('2026-09-23',now),true)});
-test('database rejects duplicate studio slots across apps and API protects contact data',async()=>{const db=new DatabaseSync(':memory:');db.exec(fs.readFileSync('drizzle/0000_keen_tarantula.sql','utf8'));db.exec(fs.readFileSync('drizzle/0001_abandoned_penance.sql','utf8'));const DB={prepare(sql){return{bind(...values){return{async all(){return{results:db.prepare(sql).all(...values)}},async run(){return db.prepare(sql).run(...values)}}}}}};const day=new Date('2026-09-23T12:00Z');const payload={...booking,date:day.toISOString().slice(0,10)};const request=b=>new Request('https://studio.test/api/bookings',{method:'POST',headers:{Origin:'https://studio.test','Content-Type':'application/json'},body:JSON.stringify(b)});const first=await worker.fetch(request(payload),{DB});assert.equal(first.status,201);assert.ok((await first.json()).id);const second=await worker.fetch(request({...payload,appId:'minicrm'}),{DB});assert.equal(second.status,409);const availability=await worker.fetch(new Request('https://studio.test/api/availability?date='+payload.date),{DB});const response=await availability.json();assert.equal(response.slots.find(s=>s.time==='10:30').available,false);assert.equal(JSON.stringify(response).includes(payload.email),false);const missingDB=await worker.fetch(new Request('https://studio.test/api/availability?date='+payload.date),{});assert.equal(missingDB.status,503);db.close()});
+import {supabaseDatabase} from '../server/supabase.js';
 
-test('editor authorization, hidden slots, inactive slots and booking revalidation',async()=>{
- const db=new DatabaseSync(':memory:');for(const file of ['0000_keen_tarantula.sql','0001_abandoned_penance.sql'])db.exec(fs.readFileSync('drizzle/'+file,'utf8'));
- const DB={async batch(statements){db.exec('BEGIN');try{for(const s of statements)await s.run();db.exec('COMMIT')}catch(e){db.exec('ROLLBACK');throw e}},prepare(sql){return{bind(...v){return{async all(){return{results:db.prepare(sql).all(...v)}},async run(){return db.prepare(sql).run(...v)}}}}}};
- const key='test-editor-key-with-at-least-32-characters';const env={DB,EDITOR_ACCESS_KEY:key};
- const req=(path,method='GET',body,auth)=>new Request('https://studio.test/api/'+path,{method,headers:{Origin:'https://studio.test','Content-Type':'application/json',...(auth?{Authorization:'Bearer '+auth}:{})},...(body?{body:JSON.stringify(body)}:{})});
- assert.equal((await worker.fetch(req('editor/session'),env)).status,401);
- assert.equal((await worker.fetch(req('editor/session','GET',null,key),{DB})).status,503);
- assert.equal((await worker.fetch(req('editor/session','GET',null,key),env)).status,200);
- const day=new Date('2026-09-23T12:00Z');const date=day.toISOString().slice(0,10);
- const settings={date,slots:['10:30','12:00','15:00'].map(time=>({time,visible:time!=='10:30',active:time!=='12:00'}))};
- assert.equal((await worker.fetch(req('editor/availability','PUT',settings,'wrong'),env)).status,401);
- assert.equal((await worker.fetch(req('editor/availability','PUT',settings,key),env)).status,200);
- let available=await (await worker.fetch(req('availability?date='+date),env)).json();
- assert.equal(available.slots[0].visible,false);assert.equal(available.slots[0].available,false);assert.equal(available.slots[1].available,false);assert.equal(available.slots[2].available,true);
- assert.equal((await worker.fetch(req('bookings','POST',{...booking,date,slot:'10:30'}),env)).status,409);
- assert.equal((await worker.fetch(req('bookings','POST',{...booking,date,slot:'12:00'}),env)).status,409);
- assert.equal((await worker.fetch(req('bookings','POST',{...booking,date,slot:'15:00'}),env)).status,201);
- settings.slots.forEach(s=>{s.visible=false;s.active=false});await worker.fetch(req('editor/availability','PUT',settings,key),env);
- assert.equal(db.prepare('SELECT count(*) as count FROM bookings').get().count,1);
- const schedule=await (await worker.fetch(req('schedule'),env)).json();assert.equal(schedule.days.some(d=>d.date===date),false);
+const now=new Date('2026-09-17T04:00:00Z');
+const booking={appId:'stocklist',date:'2026-10-01',slot:'11:00',name:'Test User',email:'test@example.com',company:'Test'};
+const request=(path,method='GET',body,auth)=>new Request('https://studio.test/api/'+path,{method,headers:{Origin:'https://studio.test','Content-Type':'application/json',...(auth?{Authorization:'Bearer '+auth}:{})},...(body?{body:JSON.stringify(body)}:{})});
+function testDatabase(){const db=new DatabaseSync(':memory:');for(const file of ['0000_keen_tarantula.sql','0001_abandoned_penance.sql'])db.exec(fs.readFileSync('drizzle/'+file,'utf8'));return db}
+function databaseAdapter(db){return {async batch(statements){db.exec('BEGIN');try{for(const s of statements)await s.run();db.exec('COMMIT')}catch(e){db.exec('ROLLBACK');throw e}},prepare(sql){return{bind(...v){return{async all(){return{results:db.prepare(sql).all(...v)}},async run(){return db.prepare(sql).run(...v)}}}}}}}
+
+test('only assigned application dates, exact slots, and valid contacts are accepted',()=>{
+ assert.equal(validateBooking(booking,now),null);
+ for(const change of [{date:'2026-09-29'},{date:'2026-09-19'},{slot:'10:30'},{slot:'16:30'},{email:'bad'},{appId:'unknown'},{date:'2026-02-31'}])assert.ok(validateBooking({...booking,...change},now));
+ assert.equal(isValidDate('2026-10-01',now,'stocklist'),true);
+ assert.equal(isValidDate('2026-10-01',now,'tendersetu'),false);
+});
+
+test('each application receives only its dates and three specified slots',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db);
+ const schedule=await (await worker.fetch(request('schedule?appId=stocklist'),{DB})).json();
+ assert.deepEqual(schedule.days.map(d=>d.date),['2026-10-01','2026-10-06']);
+ const available=await (await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),{DB})).json();
+ assert.deepEqual(available.slots.map(s=>s.time),['11:00','14:30','15:30']);
+ assert.ok(available.slots.every(s=>s.available));
+ assert.equal((await worker.fetch(request('availability?date=2026-10-01&appId=tendersetu'),{DB})).status,400);
  db.close();
 });
-import {supabaseDatabase} from '../server/supabase.js';
-test('Vercel database adapter keeps credentials server-side and maps atomic writes',async()=>{
- const original=global.fetch,calls=[];global.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/rpc/')?true:[]),{status:200})};
- try{const db=supabaseDatabase({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_test'});assert.deepEqual(await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind('2026-09-23').all(),{results:[]});const saved=await db.prepare('INSERT INTO bookings').bind('id','stocklist','2026-09-23','10:30','User','user@example.com','Company').run();assert.equal(saved.meta.changes,1);await db.batch([db.prepare('INSERT INTO availability').bind('2026-09-23','10:30',0,0)]);assert.ok(calls[1].url.endsWith('/rpc/book_session'));assert.ok(calls[2].url.endsWith('/rpc/save_availability'));assert.equal(calls[0].options.headers.apikey,'sb_secret_test');assert.equal(JSON.parse(calls[2].options.body).p_slots[0].active,0)}finally{global.fetch=original}
+
+test('database keeps a studio slot exclusive across listed applications and does not expose contacts',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db);
+ const first=await worker.fetch(request('bookings','POST',booking),{DB});assert.equal(first.status,201);
+ const second=await worker.fetch(request('bookings','POST',{...booking,appId:'minicrm'}),{DB});assert.equal(second.status,409);
+ const response=await (await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),{DB})).json();
+ assert.equal(response.slots.find(s=>s.time==='11:00').available,false);
+ assert.equal(JSON.stringify(response).includes(booking.email),false);
+ assert.equal((await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),{})).status,503);
+ db.close();
 });
 
-test('exact eight dates include Saturday and expose exactly three slots',async()=>{
- const expected=['2026-09-23','2026-09-24','2026-09-28','2026-09-29','2026-09-30','2026-10-01','2026-10-02','2026-10-03'];
- for(const date of expected)assert.equal(isValidDate(date,new Date('2026-09-18')),true);
- for(const date of ['2026-09-25','2026-10-04','2026-10-05'])assert.equal(isValidDate(date,new Date('2026-09-18')),false);
- const DB={prepare(){return {bind(){return {async all(){return {results:[]}}}}}}};
- const schedule=await (await worker.fetch(new Request('https://studio.test/api/schedule'),{DB})).json();assert.deepEqual(schedule.days.map(d=>d.date),expected);
- const available=await (await worker.fetch(new Request('https://studio.test/api/availability?date=2026-10-03'),{DB})).json();assert.deepEqual(available.slots.map(s=>s.time),['10:30','12:00','15:00']);assert.ok(available.slots.every(s=>s.available));
+test('editor settings and booking revalidation use the new time slots',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),key='test-editor-key-with-at-least-32-characters',env={DB,EDITOR_ACCESS_KEY:key};
+ assert.equal((await worker.fetch(request('editor/session'),env)).status,401);
+ const settings={date:'2026-10-01',slots:['11:00','14:30','15:30'].map(time=>({time,visible:time!=='11:00',active:time!=='14:30'}))};
+ assert.equal((await worker.fetch(request('editor/availability','PUT',settings,key),env)).status,200);
+ const available=await (await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),env)).json();
+ assert.deepEqual(available.slots.map(s=>s.available),[false,false,true]);
+ assert.equal((await worker.fetch(request('bookings','POST',{...booking,slot:'11:00'}),env)).status,409);
+ assert.equal((await worker.fetch(request('bookings','POST',{...booking,slot:'14:30'}),env)).status,409);
+ assert.equal((await worker.fetch(request('bookings','POST',{...booking,slot:'15:30'}),env)).status,201);
+ db.close();
+});
+
+test('Vercel database adapter keeps credentials server-side and maps atomic writes',async()=>{
+ const original=global.fetch,calls=[];global.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/rpc/')?true:[]),{status:200})};
+ try{const db=supabaseDatabase({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_test'});assert.deepEqual(await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind('2026-10-01').all(),{results:[]});const saved=await db.prepare('INSERT INTO bookings').bind('id','stocklist','2026-10-01','11:00','User','user@example.com','Company').run();assert.equal(saved.meta.changes,1);await db.batch([db.prepare('INSERT INTO availability').bind('2026-10-01','11:00',0,0)]);assert.ok(calls[1].url.endsWith('/rpc/book_session'));assert.ok(calls[2].url.endsWith('/rpc/save_availability'));assert.equal(calls[0].options.headers.apikey,'sb_secret_test')}finally{global.fetch=original}
 });

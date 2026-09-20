@@ -1,13 +1,21 @@
 const validApps = new Set(['dispatch-flow','tendersetu','gst-reconciliation','card-scanner','social-media-planner','digital-profile-creator','mr-wasooli','hr-studio','stocklist','minicrm',"compliance-calender","yojanasetu","hisabtalk-ai","review-desk","production-saathi"]);
-const slots = ['10:30','12:00','15:00'];
-const eventDates = ["2026-09-23","2026-09-24","2026-09-28","2026-09-29","2026-09-30","2026-10-01","2026-10-02","2026-10-03"];
+const slots = ['11:00','14:30','15:30'];
+const appSchedule = {
+ 'dispatch-flow':['2026-09-28','2026-10-07'],'tendersetu':['2026-09-28','2026-10-07'],
+ 'gst-reconciliation':['2026-09-29','2026-10-12'],'card-scanner':['2026-09-29','2026-10-12'],'social-media-planner':['2026-09-29','2026-10-12'],
+ 'digital-profile-creator':['2026-09-30','2026-10-09'],'mr-wasooli':['2026-09-30','2026-10-09'],
+ 'hr-studio':['2026-10-01','2026-10-06'],'stocklist':['2026-10-01','2026-10-06'],'minicrm':['2026-10-01','2026-10-06'],
+ 'compliance-calender':['2026-10-02','2026-10-05'],'yojanasetu':['2026-10-02','2026-10-05'],
+ 'hisabtalk-ai':['2026-10-03','2026-10-08'],'review-desk':['2026-10-03','2026-10-08'],'production-saathi':['2026-10-03','2026-10-08']
+};
+const eventDates = [...new Set(Object.values(appSchedule).flat())].sort();
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}
-export function isValidDate(date,now=new Date()){
+export function isValidDate(date,now=new Date(),appId=null){
  const today=new Date(+now+19800000).toISOString().slice(0,10);
- return eventDates.includes(date)&&date>=today;
+ return (appId?appSchedule[appId]?.includes(date):eventDates.includes(date))&&date>=today;
 }
 export function validateBooking(b,now=new Date()){
- if(!b||typeof b!=='object'||!validApps.has(b.appId)||!isValidDate(b.date,now)||!slots.includes(b.slot))return 'Please choose a valid application, scheduled date and time.';
+ if(!b||typeof b!=='object'||!validApps.has(b.appId)||!isValidDate(b.date,now,b.appId)||!slots.includes(b.slot))return 'Please choose a valid application, scheduled date and time.';
  if(+new Date(b.date+'T'+b.slot+':00+05:30')<=+now)return 'This slot has already started. Please choose a later slot.';
  if(typeof b.name!=='string'||b.name.trim().length<2||b.name.length>100)return 'Enter your full name (2–100 characters).';
  if(typeof b.email!=='string'||b.email.length>254||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email))return 'Enter a valid email address.';
@@ -28,7 +36,7 @@ export default {async fetch(request,env){
     if(diff!==0)return json({error:'Invalid editor access key.'},401);
     if(url.pathname==='/api/editor/session'&&request.method==='GET')return json({role:'editor'});
     if(url.pathname==='/api/editor/availability'&&request.method==='GET') {
-     const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled dates from 23 September to 3 October 2026.'},400);
+     const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled application dates.'},400);
      const records=await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all();
      const bookings=await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind(date).all();
      return json({slots:slots.map(time=>{const row=records.results.find(r=>r.slot===time);return {time,visible:row?!!row.visible:true,active:row?!!row.active:true,booked:bookings.results.some(r=>r.slot===time)}})});
@@ -43,12 +51,13 @@ export default {async fetch(request,env){
     return json({error:'Not found'},404);
    }
    if(url.pathname==='/api/schedule'&&request.method==='GET'){
-    const dates=eventDates.filter(date=>isValidDate(date));if(!dates.length)return json({days:[]});
+    const appId=url.searchParams.get('appId');if(!validApps.has(appId))return json({error:'Choose a valid application.'},400);
+    const dates=appSchedule[appId].filter(date=>isValidDate(date));if(!dates.length)return json({days:[]});
     const rows=await db.prepare('SELECT date, slot, visible, active FROM availability WHERE date >= ? AND date <= ?').bind(dates[0],dates.at(-1)).all();
     return json({days:dates.map(date=>{const settings=slots.map(slot=>rows.results.find(r=>r.date===date&&r.slot===slot));return {date,visible:settings.some(r=>!r||r.visible),active:settings.some(r=>!r||(r.visible&&r.active))}}).filter(d=>d.visible)});
    }
    if(url.pathname==='/api/availability'&&request.method==='GET'){
-    const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled dates from 23 September to 3 October 2026.'},400);
+    const date=url.searchParams.get('date'),appId=url.searchParams.get('appId');if(!validApps.has(appId)||!isValidDate(date,new Date(),appId))return json({error:'Choose an available date for this application.'},400);
     const result=await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind(date).all();
     const reserved=new Set(result.results.map(r=>r.slot));
     const settings=(await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all()).results;

@@ -42,11 +42,11 @@ Local preview: http://127.0.0.1:4174. The SQLite test database is stored under i
 
 The build continues to emit the Cloudflare Worker and generated D1 migrations. Sites uses its own D1 binding and needs `EDITOR_ACCESS_KEY` as a server secret for editor access. Vercel uses Supabase instead. Neither system stores authoritative bookings in browser storage.
 
-Landing motion plays automatically and honors reduced-motion preferences. The original landing composition fits the viewport on desktop, mobile, and landscape screens. All eight scheduled dates and three time slots are displayed together; the booking layout is compact and allows natural overflow on unusually short displays or enlarged text rather than clipping controls.
+Landing motion plays automatically and honors reduced-motion preferences. The original landing composition fits the viewport on desktop, mobile, and landscape screens. Each application displays only its assigned dates and the three daily session times; the booking layout is compact and allows natural overflow on unusually short displays or enlarged text rather than clipping controls.
 
 ## Current schedule
 
-23, 24, 28, 29, 30 September and 1, 2, 3 October **2026**. Each date offers **10:30–11:30 AM, 12–1 PM, and 3–4 PM IST**. This includes Saturday, 3 October. When the database cannot be reached, the UI displays these as planned slots; visitors can still generate their local session card, which does not reserve the selected slot.
+All sessions are in **2026** and use **11 AM–12 PM, 2:30–3:30 PM, and 3:30–4:30 PM IST**. Dispatch Flow and TenderSetu run on 28 September and 7 October; GST Reconciliation, Card Scanner, and Social Media Planner run on 29 September and 12 October; Digital Profile Creator and Payment Followup Agent run on 30 September and 9 October; HR Studio, Stocklist, and MiniCRM run on 1 and 6 October; Compliance Calender and YojanaSetu run on 2 and 5 October; and HisabTalk AI, Review Desk, and Production Saathi run on 3 and 8 October. When the database cannot be reached, the UI displays the assigned planned dates and slots; visitors can still generate their local session card, which does not reserve the selected slot.
 
 ## Application trailers
 
