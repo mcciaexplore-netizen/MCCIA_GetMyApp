@@ -7,14 +7,15 @@ import worker,{validateBooking,isValidDate} from '../server/worker.js';
 import {supabaseDatabase} from '../server/supabase.js';
 
 const now=new Date('2026-09-17T04:00:00Z');
-const booking={appId:'stocklist',date:'2026-10-01',slot:'14:30',name:'Test User',email:'test@example.com',company:'Test'};
+const booking={appId:'stocklist',date:'2026-10-01',slot:'14:30',name:'Test User',phone:'+91 98765 43210',email:'test@example.com',company:'Test'};
 const request=(path,method='GET',body,auth)=>new Request('https://studio.test/api/'+path,{method,headers:{Origin:'https://studio.test','Content-Type':'application/json',...(auth?{Authorization:'Bearer '+auth}:{})},...(body?{body:JSON.stringify(body)}:{})});
-function testDatabase(){const db=new DatabaseSync(':memory:');for(const file of ['0000_keen_tarantula.sql','0001_abandoned_penance.sql'])db.exec(fs.readFileSync('drizzle/'+file,'utf8'));return db}
+function testDatabase(){const db=new DatabaseSync(':memory:');db.exec(fs.readFileSync('drizzle/0000_soft_ulik.sql','utf8'));return db}
 function databaseAdapter(db){return {async batch(statements){db.exec('BEGIN');try{for(const s of statements)await s.run();db.exec('COMMIT')}catch(e){db.exec('ROLLBACK');throw e}},prepare(sql){return{bind(...v){return{async all(){return{results:db.prepare(sql).all(...v)}},async run(){return db.prepare(sql).run(...v)}}}}}}}
+const bookingInsertSql='INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))';
 
 test('only assigned application dates, exact slots, and valid contacts are accepted',()=>{
  assert.equal(validateBooking(booking,now),null);
- for(const change of [{date:'2026-09-29'},{date:'2026-09-19'},{slot:'11:00'},{slot:'16:30'},{email:'bad'},{appId:'unknown'},{date:'2026-02-31'}])assert.ok(validateBooking({...booking,...change},now));
+ for(const change of [{date:'2026-09-29'},{date:'2026-09-19'},{slot:'11:00'},{slot:'16:30'},{email:'bad'},{appId:'unknown'},{date:'2026-02-31'},{phone:'123'},{phone:'not a phone!!'}])assert.ok(validateBooking({...booking,...change},now));
  assert.equal(isValidDate('2026-10-01',now,'stocklist'),true);
  assert.equal(isValidDate('2026-10-01',now,'tendersetu'),false);
 });
@@ -30,14 +31,43 @@ test('each application receives only its assigned dates and exact time slot',asy
  db.close();
 });
 
-test('database keeps a studio slot exclusive across listed applications and does not expose contacts',async()=>{
+test('different people can book the same app/date/slot; the same person cannot duplicate it',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db);
  const first=await worker.fetch(request('bookings','POST',booking),{DB});assert.equal(first.status,201);
- const second=await worker.fetch(request('bookings','POST',booking),{DB});assert.equal(second.status,409);
+ const second=await worker.fetch(request('bookings','POST',{...booking,email:'second-person@example.com'}),{DB});assert.equal(second.status,201);
+ const third=await worker.fetch(request('bookings','POST',{...booking,email:'ThirdPerson@Example.com'}),{DB});assert.equal(third.status,201);
+ // Same email (case/whitespace-insensitive) booking the same app+date+slot again is rejected as a duplicate, not treated as capacity exhaustion.
+ const duplicate=await worker.fetch(request('bookings','POST',booking),{DB});assert.equal(duplicate.status,409);
+ assert.match((await duplicate.json()).error,/already booked/i);
+ // Slot must remain available after multiple people have booked it — there is no occupancy limit.
  const response=await (await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),{DB})).json();
- assert.equal(response.slots.find(s=>s.time==='14:30').available,false);
+ assert.equal(response.slots.find(s=>s.time==='14:30').available,true);
  assert.equal(JSON.stringify(response).includes(booking.email),false);
  assert.equal((await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),{})).status,503);
+ db.close();
+});
+
+test('the duplicate guard is scoped per application, not globally by date/slot',async()=>{
+ const db=testDatabase(),now2=new Date().toISOString();
+ // Bypass per-app schedule validation to exercise the DB constraint directly: the same person
+ // booking two different applications for the identical date+slot must not collide.
+ const first=db.prepare(bookingInsertSql).run('id-1','app-a','App A','2026-10-01','14:30','Test User','+91 98765 43210','same-person@example.com','',now2,'2026-10-01','14:30');
+ assert.equal(first.changes,1);
+ const second=db.prepare(bookingInsertSql).run('id-2','app-b','App B','2026-10-01','14:30','Test User','+91 98765 43210','same-person@example.com','',now2,'2026-10-01','14:30');
+ assert.equal(second.changes,1);
+ assert.throws(()=>db.prepare(bookingInsertSql).run('id-3','app-a','App A','2026-10-01','14:30','Test User','+91 98765 43210','same-person@example.com','',now2,'2026-10-01','14:30'),/UNIQUE constraint/);
+ db.close();
+});
+
+test('the server derives app_name from a trusted map and ignores any client-supplied value',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db);
+ const res=await worker.fetch(request('bookings','POST',{...booking,appName:'Totally Fake Name'}),{DB});
+ assert.equal(res.status,201);
+ const body=await res.json();
+ assert.equal(body.appName,'Stocklist');
+ const row=db.prepare('SELECT app_name, phone FROM bookings WHERE id = ?').get(body.id);
+ assert.equal(row.app_name,'Stocklist');
+ assert.equal(row.phone,booking.phone);
  db.close();
 });
 
@@ -57,5 +87,5 @@ test('editor settings and booking revalidation use the new time slots',async()=>
 
 test('Vercel database adapter keeps credentials server-side and maps atomic writes',async()=>{
  const original=global.fetch,calls=[];global.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/rpc/')?true:[]),{status:200})};
- try{const db=supabaseDatabase({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_test'});assert.deepEqual(await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind('2026-10-01').all(),{results:[]});const saved=await db.prepare('INSERT INTO bookings').bind('id','stocklist','2026-10-01','14:30','User','user@example.com','Company').run();assert.equal(saved.meta.changes,1);await db.batch([db.prepare('INSERT INTO availability').bind('2026-10-01','14:30',0,0)]);assert.ok(calls[1].url.endsWith('/rpc/book_session'));assert.ok(calls[2].url.endsWith('/rpc/save_availability'));assert.equal(calls[0].options.headers.apikey,'sb_secret_test')}finally{global.fetch=original}
+ try{const db=supabaseDatabase({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_test'});assert.deepEqual(await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind('2026-10-01').all(),{results:[]});const saved=await db.prepare('INSERT INTO bookings').bind('id','stocklist','Stocklist','2026-10-01','14:30','User','+91 98765 43210','user@example.com','Company').run();assert.equal(saved.meta.changes,1);await db.batch([db.prepare('INSERT INTO availability').bind('2026-10-01','14:30',0,0)]);assert.ok(calls[1].url.endsWith('/rpc/book_session'));assert.ok(calls[2].url.endsWith('/rpc/save_availability'));assert.equal(calls[0].options.headers.apikey,'sb_secret_test')}finally{global.fetch=original}
 });

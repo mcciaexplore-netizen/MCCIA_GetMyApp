@@ -1,4 +1,12 @@
 const validApps = new Set(['dispatch-flow','tendersetu','gst-reconciliation','card-scanner','social-media-planner','digital-profile-creator','mr-wasooli','hr-studio','stocklist','minicrm',"compliance-calender","yojanasetu","hisabtalk-ai","review-desk","production-saathi"]);
+// Trusted appId -> display name map. Never take app_name from the request body; always derive it from here.
+const appNames = {
+ 'dispatch-flow':'Dispatch Flow','tendersetu':'TenderSetu','gst-reconciliation':'GST Reconciliation',
+ 'card-scanner':'Card Scanner','social-media-planner':'Social Media Planner','digital-profile-creator':'Digital Profile Creator',
+ 'mr-wasooli':'Payment Followup Agent','hr-studio':'HR Studio','stocklist':'Stocklist','minicrm':'MiniCRM',
+ 'compliance-calender':'Compliance Calender','yojanasetu':'YojanaSetu','hisabtalk-ai':'HisabTalk AI',
+ 'review-desk':'Review Desk','production-saathi':'Production Saathi'
+};
 const slots = ['11:00','14:30','15:30'];
 const appSchedule = {
  'dispatch-flow':[{date:'2026-09-28',slot:'11:00'},{date:'2026-10-06',slot:'14:30'}],
@@ -27,6 +35,8 @@ export function validateBooking(b,now=new Date()){
  if(!b||typeof b!=='object'||!validApps.has(b.appId)||!appSchedule[b.appId].some(entry=>entry.date===b.date&&entry.slot===b.slot)||!isValidDate(b.date,now,b.appId))return 'Please choose the scheduled date and time for this application.';
  if(+new Date(b.date+'T'+b.slot+':00+05:30')<=+now)return 'This slot has already started. Please choose a later slot.';
  if(typeof b.name!=='string'||b.name.trim().length<2||b.name.length>100)return 'Enter your full name (2–100 characters).';
+ const phoneDigits=typeof b.phone==='string'?b.phone.replace(/\D/g,''):'';
+ if(typeof b.phone!=='string'||phoneDigits.length<7||phoneDigits.length>15||!/^\+?[\d\s().-]+$/.test(b.phone))return 'Enter a valid phone number with 7–15 digits.';
  if(typeof b.email!=='string'||b.email.length>254||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email))return 'Enter a valid email address.';
  if(typeof b.company!=='string'||b.company.length>150)return 'Company must be 150 characters or fewer.';
  return null;
@@ -68,10 +78,10 @@ export default {async fetch(request,env){
    }
    if(url.pathname==='/api/availability'&&request.method==='GET'){
     const date=url.searchParams.get('date'),appId=url.searchParams.get('appId');if(!validApps.has(appId)||!isValidDate(date,new Date(),appId))return json({error:'Choose an available date for this application.'},400);
-    const result=await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind(date).all();
-    const reserved=new Set(result.results.map(r=>r.slot));
+    // No occupancy limit: a slot's availability depends only on the editor's visible/active flags
+    // and whether its time has passed, never on how many people have already booked it.
     const settings=(await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all()).results;
-    return json({date,slots:appSchedule[appId].filter(entry=>entry.date===date).map(({slot})=>({time:slot,visible:settings.find(r=>r.slot===slot)?.visible!==0,available:settings.find(r=>r.slot===slot)?.visible!==0&&settings.find(r=>r.slot===slot)?.active!==0&&!reserved.has(slot)&&+new Date(date+'T'+slot+':00+05:30')>Date.now()}))});
+    return json({date,slots:appSchedule[appId].filter(entry=>entry.date===date).map(({slot})=>({time:slot,visible:settings.find(r=>r.slot===slot)?.visible!==0,available:settings.find(r=>r.slot===slot)?.visible!==0&&settings.find(r=>r.slot===slot)?.active!==0&&+new Date(date+'T'+slot+':00+05:30')>Date.now()}))});
    }
    if(url.pathname==='/api/bookings'&&request.method==='POST'){
     if(request.headers.get('Origin')!==url.origin)return json({error:'Please book from this application.'},403);
@@ -79,10 +89,13 @@ export default {async fetch(request,env){
     const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);
     let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
     const error=validateBooking(b);if(error)return json({error},400);
-    const id=crypto.randomUUID();
-    try{const saved=await db.prepare('INSERT INTO bookings (id, app_id, date, slot, name, email, company, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))').bind(id,b.appId,b.date,b.slot,b.name.trim(),b.email.trim().toLowerCase(),b.company.trim(),new Date().toISOString(),b.date,b.slot).run();if((saved.meta?.changes??saved.changes)===0)return json({error:'This slot is no longer available. Please choose another time.'},409)}
-    catch(e){if(String(e).includes('UNIQUE constraint'))return json({error:'This slot was just booked. Please choose another time.'},409);throw e}
-    return json({id,appId:b.appId,date:b.date,slot:b.slot},201);
+    const id=crypto.randomUUID(),appName=appNames[b.appId];
+    // No occupancy limit: any number of different people may book the same app+date+slot.
+    // The unique index on (app_id, date, slot, email) only guards against the SAME person
+    // accidentally double-submitting; it is not a capacity check.
+    try{const saved=await db.prepare('INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))').bind(id,b.appId,appName,b.date,b.slot,b.name.trim(),b.phone.trim(),b.email.trim().toLowerCase(),b.company.trim(),new Date().toISOString(),b.date,b.slot).run();if((saved.meta?.changes??saved.changes)===0)return json({error:'This slot is no longer available. Please choose another time.'},409)}
+    catch(e){if(String(e).includes('UNIQUE constraint'))return json({error:"You've already booked this application's session for this date and time."},409);throw e}
+    return json({id,appId:b.appId,appName,date:b.date,slot:b.slot},201);
    }
    return json({error:'Not found'},404);
   }catch(e){console.error('Booking API failed:',String(e));return json({error:'Booking is temporarily unavailable. Please try again shortly.'},503)}
