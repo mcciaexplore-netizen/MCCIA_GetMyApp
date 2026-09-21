@@ -46,7 +46,7 @@ Landing motion plays automatically and honors reduced-motion preferences. The or
 
 ## Current schedule
 
-All sessions are in **2026** and use **11 AM–12 PM, 2:30–3:30 PM, and 3:30–4:30 PM IST**. Dispatch Flow and TenderSetu run on 28 September and 7 October; GST Reconciliation, Card Scanner, and Social Media Planner run on 29 September and 12 October; Digital Profile Creator and Payment Followup Agent run on 30 September and 9 October; HR Studio, Stocklist, and MiniCRM run on 1 and 6 October; Compliance Calender and YojanaSetu run on 2 and 5 October; and HisabTalk AI, Review Desk, and Production Saathi run on 3 and 8 October. When the database cannot be reached, the UI displays the assigned planned dates and slots; visitors can still generate their local session card, which does not reserve the selected slot.
+All sessions are in **2026**. The first week uses 28, 29, and 30 September plus 1 and 3 October; the second week uses every weekday from 5 to 9 October. Each application that appears in both weeks changes both weekday and time slot. The schedule assigns 2, 3, 2, 3, and 3 applications across the first week’s five dates, then 3 applications on each weekday of the second week. When the database cannot be reached, the UI displays the assigned planned dates and slots; visitors can still generate their local session card, which does not reserve the selected slot.
 
 ## Application trailers
 
