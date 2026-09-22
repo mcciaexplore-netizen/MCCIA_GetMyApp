@@ -8,6 +8,13 @@
       "when": 1790007333000,
       "tag": "0000_soft_ulik",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790070607531,
+      "tag": "0001_sour_blonde_phantom",
+      "breakpoints": true
     }
   ]
 }

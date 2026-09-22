@@ -16,3 +16,34 @@
 
 /* Application trailers */
 .detail-actions{display:flex;align-items:center;flex-wrap:wrap;gap:14px}.trailer-button{display:inline-flex;align-items:center;gap:10px;padding:16px 26px;border:1px solid #ffffff66;border-radius:8px;background:#ffffff10;color:#fff;font:inherit;font-weight:600;cursor:pointer;transition:background .2s,transform .2s}.trailer-button:hover{background:#ffffff24;transform:translateY(-2px)}.trailer-button:focus-visible,.trailer-close:focus-visible{outline:3px solid #d0ffa7;outline-offset:4px}.trailer-dialog{width:min(960px,92vw);max-height:92svh;padding:0;border:1px solid #ffffff26;border-radius:18px;background:#151729;color:white;box-shadow:0 30px 100px #0008}.trailer-dialog::backdrop{background:#070914dc;backdrop-filter:blur(8px)}.trailer-heading{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:20px 24px}.trailer-heading small{color:#bcb0ef;font-size:10px;letter-spacing:2px}.trailer-heading h2{margin:6px 0 0;font-size:22px}.trailer-close{border:1px solid #ffffff40;background:#ffffff0d;color:white;border-radius:50%;width:42px;height:42px;flex-shrink:0;font-size:28px;cursor:pointer}.trailer-dialog video{display:block;width:100%;max-height:65svh;background:#000}.trailer-error{margin:0;padding:0 24px;font-size:13px;color:#dfd8f5}.trailer-error:not(:empty){padding:15px 24px}@media(max-width:560px){.trailer-heading{padding:16px}.trailer-heading h2{font-size:18px}.detail-actions{gap:10px}.trailer-button{padding:14px 20px}}
+
+/* Session progress + admin dashboard additions */
+.session-view{max-width:560px}
+.progress-block{margin-top:22px}
+.progress-block strong{display:block;font-size:16px;margin-top:4px}
+.progress-track{background:#eef0f5;border-radius:20px;height:10px;overflow:hidden;margin:10px 0 6px}
+.progress-fill{background:var(--red);height:100%;border-radius:20px;transition:width .3s}
+.progress-percent{font-size:13px;color:#7d8492}
+.session-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;margin-top:16px;list-style:none;padding:0}
+.session-summary-grid dt{color:#7d8492;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.session-summary-grid dd{margin:0;font-weight:600}
+.admin-nav{display:flex;gap:6px;margin:24px 0 8px;border-bottom:1px solid #e2e5ed;flex-wrap:wrap}
+.admin-nav-item{background:none;border:0;padding:10px 16px;font-size:14px;color:#7d8492;border-bottom:2px solid transparent;font:inherit}
+.admin-nav-item.selected{color:var(--red);border-color:var(--red);font-weight:650}
+.sessions-table-wrap{overflow-x:auto;margin-top:10px}
+.sessions-table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+.sessions-table th{text-align:left;padding:10px 12px;font-size:11px;color:#7d8492;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #e2e5ed;white-space:nowrap}
+.sessions-table td{padding:12px;border-bottom:1px solid #eef0f4;vertical-align:middle;white-space:nowrap}
+.status-pill{display:inline-block;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:650}
+.session-edit-form{display:grid;gap:16px;margin-top:18px;max-width:420px}
+.session-edit-form label{display:block;font-size:14px}
+.session-edit-form input,.session-edit-form select,.session-edit-form textarea{display:block;padding:13px;margin-top:8px;border:1px solid #d9dfe7;border-radius:7px;font:inherit;width:100%;box-sizing:border-box}
+.session-edit-form textarea{min-height:90px;resize:vertical}
+@media(max-width:800px){.sessions-table{min-width:640px}}
+@media(max-width:560px){.session-edit-form{max-width:100%}.admin-nav{gap:2px}.admin-nav-item{padding:9px 10px;font-size:13px}.session-summary-grid{grid-template-columns:1fr}}
+
+/* QR code on the booking confirmation card */
+.session-qr{text-align:center;margin-top:26px;padding-top:22px;border-top:1px solid #e8ebf0}
+.session-qr img{max-width:100%;height:auto;border-radius:10px;background:#fff;padding:10px;border:1px solid #e5e6ed}
+.session-qr p{font-size:12px;color:#7d8492;margin:10px 0 0;line-height:1.5}
+@media(max-width:560px){.session-qr img{width:180px}}

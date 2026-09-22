@@ -8,6 +8,10 @@ const appNames = {
  'review-desk':'Review Desk','production-saathi':'Production Saathi'
 };
 const slots = ['11:00','14:30','15:30'];
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Kept as small, easy-to-edit lists so the workflow vocabulary can change without touching logic.
+const attendanceValues = ['Not Marked','Present','Absent'];
+const progressStages = ['Not Started','In Progress','Completed'];
 const appSchedule = {
  'dispatch-flow':[{date:'2026-09-28',slot:'11:00'},{date:'2026-10-06',slot:'14:30'}],
  'tendersetu':[{date:'2026-09-28',slot:'14:30'},{date:'2026-10-06',slot:'11:00'}],
@@ -54,6 +58,15 @@ export default {async fetch(request,env){
     const [actual,expected]=await Promise.all([hash(token),hash(env.EDITOR_ACCESS_KEY)]);let diff=0;for(let i=0;i<actual.length;i++)diff|=actual[i]^expected[i];
     if(diff!==0)return json({error:'Invalid editor access key.'},401);
     if(url.pathname==='/api/editor/session'&&request.method==='GET')return json({role:'editor'});
+    if(url.pathname==='/api/editor/sessions'&&request.method==='GET'){
+     // Admin-only list combining bookings with their session_progress row. Two queries + a
+     // JS-side merge, matching the same pattern already used for the public GET /api/session/:id
+     // and for the availability GET above, rather than introducing join support into the DB layer.
+     const bookingRows=(await db.prepare('SELECT id, app_name, name, company, date, slot FROM bookings ORDER BY date, slot').bind().all()).results;
+     const progressRows=(await db.prepare('SELECT booking_id, attendance, hours_completed, progress_stage, progress_percent, remarks FROM session_progress').bind().all()).results;
+     const progressByBooking=new Map(progressRows.map(p=>[p.booking_id,p]));
+     return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {id:b.id,name:b.name,appName:b.app_name,company:b.company,date:b.date,slot:b.slot,attendance:p.attendance||'Not Marked',hoursCompleted:p.hours_completed??0,progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0,remarks:p.remarks||''}})});
+    }
     if(url.pathname==='/api/editor/availability'&&request.method==='GET') {
      const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled application dates.'},400);
      const records=await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all();
@@ -67,7 +80,40 @@ export default {async fetch(request,env){
      await db.batch(b.slots.map(s=>db.prepare('INSERT INTO availability (date, slot, visible, active) VALUES (?, ?, ?, ?) ON CONFLICT(date, slot) DO UPDATE SET visible=excluded.visible, active=excluded.active').bind(b.date,s.time,Number(s.visible),Number(s.active))));
      return json({saved:true});
     }
+    const sessionMatch=url.pathname.match(/^\/api\/editor\/session\/([^/]+)$/);
+    if(sessionMatch&&request.method==='PATCH'){
+     if(request.headers.get('Origin')!==url.origin)return json({error:'Use the studio editor page.'},403);
+     const bookingId=sessionMatch[1];
+     if(!uuidPattern.test(bookingId))return json({error:'Malformed booking ID.'},400);
+     if(!request.headers.get('Content-Type')?.includes('application/json'))return json({error:'JSON required.'},415);
+     const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);
+     let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
+     if(typeof b.attendance!=='string'||!attendanceValues.includes(b.attendance))return json({error:'Invalid attendance value.'},400);
+     if(typeof b.hoursCompleted!=='number'||!Number.isFinite(b.hoursCompleted)||b.hoursCompleted<0||b.hoursCompleted>99.99)return json({error:'Hours completed must be a number between 0 and 99.99.'},400);
+     if(typeof b.progressStage!=='string'||!progressStages.includes(b.progressStage))return json({error:'Invalid progress stage.'},400);
+     if(!Number.isInteger(b.progressPercent)||b.progressPercent<0||b.progressPercent>100)return json({error:'Progress percent must be a whole number between 0 and 100.'},400);
+     if(typeof b.remarks!=='string'||b.remarks.length>2000)return json({error:'Remarks must be 2000 characters or fewer.'},400);
+     const updatedAt=new Date().toISOString(),remarks=b.remarks.trim();
+     // updated_by intentionally left null: the current auth model is a single shared editor
+     // key with no per-admin identity to attribute the change to.
+     const result=await db.prepare('UPDATE session_progress SET attendance=?, hours_completed=?, progress_stage=?, progress_percent=?, remarks=?, updated_at=? WHERE booking_id=?').bind(b.attendance,b.hoursCompleted,b.progressStage,b.progressPercent,remarks,updatedAt,bookingId).run();
+     if((result.meta?.changes??result.changes)===0)return json({error:'Session not found.'},404);
+     return json({bookingId,attendance:b.attendance,hoursCompleted:b.hoursCompleted,progressStage:b.progressStage,progressPercent:b.progressPercent,remarks,updatedAt});
+    }
     return json({error:'Not found'},404);
+   }
+   if(url.pathname.startsWith('/api/session/')){
+    if(request.method!=='GET')return json({error:'Method not allowed'},405);
+    const bookingId=url.pathname.slice('/api/session/'.length);
+    if(!uuidPattern.test(bookingId))return json({error:'Malformed booking ID.'},400);
+    const bookingRows=(await db.prepare('SELECT id, app_name, name, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
+    if(!bookingRows.length)return json({error:'Booking not found.'},404);
+    const progressRows=(await db.prepare('SELECT progress_stage, progress_percent FROM session_progress WHERE booking_id = ?').bind(bookingId).all()).results;
+    if(!progressRows.length)return json({error:'Session not found.'},404);
+    const booking=bookingRows[0],progress=progressRows[0];
+    // Deliberately excludes phone, email, company and remarks -- this response is public and
+    // unauthenticated, so only non-sensitive fields are ever selected/returned, server-side.
+    return json({id:booking.id,name:booking.name,appName:booking.app_name,date:booking.date,slot:booking.slot,progressStage:progress.progress_stage,progressPercent:progress.progress_percent});
    }
    if(url.pathname==='/api/schedule'&&request.method==='GET'){
     const appId=url.searchParams.get('appId');if(!validApps.has(appId))return json({error:'Choose a valid application.'},400);
@@ -89,11 +135,25 @@ export default {async fetch(request,env){
     const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);
     let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
     const error=validateBooking(b);if(error)return json({error},400);
-    const id=crypto.randomUUID(),appName=appNames[b.appId];
+    const id=crypto.randomUUID(),appName=appNames[b.appId],createdAt=new Date().toISOString();
     // No occupancy limit: any number of different people may book the same app+date+slot.
     // The unique index on (app_id, date, slot, email) only guards against the SAME person
     // accidentally double-submitting; it is not a capacity check.
-    try{const saved=await db.prepare('INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))').bind(id,b.appId,appName,b.date,b.slot,b.name.trim(),b.phone.trim(),b.email.trim().toLowerCase(),b.company.trim(),new Date().toISOString(),b.date,b.slot).run();if((saved.meta?.changes??saved.changes)===0)return json({error:'This slot is no longer available. Please choose another time.'},409)}
+    try{
+     const saved=await db.prepare('INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))').bind(id,b.appId,appName,b.date,b.slot,b.name.trim(),b.phone.trim(),b.email.trim().toLowerCase(),b.company.trim(),createdAt,b.date,b.slot).run();
+     if((saved.meta?.changes??saved.changes)===0)return json({error:'This slot is no longer available. Please choose another time.'},409);
+     // Every booking must have exactly one session_progress row. In production this is created
+     // atomically inside book_session() itself (see supabase/schema.sql) -- if that insert fails,
+     // the whole booking rolls back there, so we never reach this point with an inconsistent
+     // state. This call is a deliberately idempotent (NOT EXISTS-guarded) safety net: it's the
+     // ONLY place the row gets created for local/dev SQLite (which has no stored procedure), and
+     // a harmless no-op in production where the row already exists. If it fails here, we do not
+     // return a successful booking -- the visitor sees an error rather than a booking with no
+     // session_progress record. created_at/updated_at are passed explicitly (matching the same
+     // timestamp as the booking) rather than relying on a DB-level default.
+     try{await db.prepare('INSERT INTO session_progress (booking_id, created_at, updated_at) SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM session_progress WHERE booking_id = ?)').bind(id,createdAt,createdAt,id).run()}
+     catch(spErr){console.error('Failed to create session_progress for booking',id,String(spErr));return json({error:'Booking could not be completed. Please try again.'},503)}
+    }
     catch(e){if(String(e).includes('UNIQUE constraint'))return json({error:"You've already booked this application's session for this date and time."},409);throw e}
     return json({id,appId:b.appId,appName,date:b.date,slot:b.slot},201);
    }
