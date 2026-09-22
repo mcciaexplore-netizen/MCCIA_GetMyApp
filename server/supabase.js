@@ -14,6 +14,8 @@ export function supabaseDatabase(env) {
    else if(sql==='SELECT progress_stage, progress_percent FROM session_progress WHERE booking_id = ?')path='session_progress?select=progress_stage,progress_percent&booking_id=eq.'+encodeURIComponent(v[0]);
    else if(sql==='SELECT id, app_name, name, company, date, slot FROM bookings ORDER BY date, slot')path='bookings?select=id,app_name,name,company,date,slot&order=date.asc,slot.asc';
    else if(sql==='SELECT booking_id, attendance, hours_completed, progress_stage, progress_percent, remarks FROM session_progress')path='session_progress?select=booking_id,attendance,hours_completed,progress_stage,progress_percent,remarks';
+   else if(sql==='SELECT app_name, name, company, date, slot FROM bookings WHERE id = ?')path='bookings?select=app_name,name,company,date,slot&id=eq.'+encodeURIComponent(v[0]);
+   else if(sql==='SELECT created_at FROM session_progress WHERE booking_id = ?')path='session_progress?select=created_at&booking_id=eq.'+encodeURIComponent(v[0]);
    else throw Error('Unsupported query');
    return {results:await call(path)}
   },async run(){

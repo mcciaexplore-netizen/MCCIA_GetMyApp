@@ -46,6 +46,17 @@ export function validateBooking(b,now=new Date()){
  return null;
 }
 function database(env){if(!env.DB)throw new Error('Booking database unavailable');return env.DB;}
+// Writes/updates one row in the master Google Sheet via a Google Apps Script Web App, which is
+// the authoritative store for session/progress data (see supabase/schema.sql's session_progress
+// table, which is kept as a fast-read mirror updated only after this call succeeds). Never called
+// from the browser -- only from the server, using server-only env vars.
+async function upsertSheetRow(env,session){
+ if(!env.GOOGLE_SHEETS_WEBHOOK_URL||!env.GOOGLE_SHEETS_WEBHOOK_SECRET)throw new Error('Google Sheets sync is not configured.');
+ const res=await fetch(env.GOOGLE_SHEETS_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:env.GOOGLE_SHEETS_WEBHOOK_SECRET,action:'UPSERT_SESSION',session})});
+ let data;try{data=await res.json()}catch{throw new Error('Google Sheets sync returned an unexpected response.')}
+ if(!res.ok||!data.success)throw new Error(data.error||'Google Sheets sync failed.');
+ return true;
+}
 export default {async fetch(request,env){
  const url=new URL(request.url);
  if(url.pathname.startsWith('/api/')){
@@ -60,7 +71,7 @@ export default {async fetch(request,env){
     if(url.pathname==='/api/editor/session'&&request.method==='GET')return json({role:'editor'});
     if(url.pathname==='/api/editor/sessions'&&request.method==='GET'){
      // Admin-only list combining bookings with their session_progress row. Two queries + a
-     // JS-side merge, matching the same pattern already used for the public GET /api/session/:id
+     // JS-side merge, matching the same pattern already used for the public GET /api/session
      // and for the availability GET above, rather than introducing join support into the DB layer.
      const bookingRows=(await db.prepare('SELECT id, app_name, name, company, date, slot FROM bookings ORDER BY date, slot').bind().all()).results;
      const progressRows=(await db.prepare('SELECT booking_id, attendance, hours_completed, progress_stage, progress_percent, remarks FROM session_progress').bind().all()).results;
@@ -80,10 +91,17 @@ export default {async fetch(request,env){
      await db.batch(b.slots.map(s=>db.prepare('INSERT INTO availability (date, slot, visible, active) VALUES (?, ?, ?, ?) ON CONFLICT(date, slot) DO UPDATE SET visible=excluded.visible, active=excluded.active').bind(b.date,s.time,Number(s.visible),Number(s.active))));
      return json({saved:true});
     }
-    const sessionMatch=url.pathname.match(/^\/api\/editor\/session\/([^/]+)$/);
-    if(sessionMatch&&request.method==='PATCH'){
+    // NOTE: booking id is a QUERY PARAMETER (?id=...), not a path segment, matching the shape
+    // of every other route in this file (/api/bookings, /api/schedule, /api/availability,
+    // /api/editor/availability) that is confirmed working in production. An earlier version of
+    // this route used a nested path segment (/api/editor/session/:id) and, like the equivalent
+    // public /api/session/:id below, was seen returning a non-JSON response in production even
+    // though every code path in this file returns valid JSON on every branch -- consistent with
+    // a platform/routing issue specific to nested dynamic path segments under /api/, not an
+    // application bug. Query-parameter routing avoids that shape entirely.
+    if(url.pathname==='/api/editor/session'&&request.method==='PATCH'){
      if(request.headers.get('Origin')!==url.origin)return json({error:'Use the studio editor page.'},403);
-     const bookingId=sessionMatch[1];
+     const bookingId=url.searchParams.get('id')||'';
      if(!uuidPattern.test(bookingId))return json({error:'Malformed booking ID.'},400);
      if(!request.headers.get('Content-Type')?.includes('application/json'))return json({error:'JSON required.'},415);
      const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);
@@ -93,18 +111,34 @@ export default {async fetch(request,env){
      if(typeof b.progressStage!=='string'||!progressStages.includes(b.progressStage))return json({error:'Invalid progress stage.'},400);
      if(!Number.isInteger(b.progressPercent)||b.progressPercent<0||b.progressPercent>100)return json({error:'Progress percent must be a whole number between 0 and 100.'},400);
      if(typeof b.remarks!=='string'||b.remarks.length>2000)return json({error:'Remarks must be 2000 characters or fewer.'},400);
-     const updatedAt=new Date().toISOString(),remarks=b.remarks.trim();
+     const bookingRows=(await db.prepare('SELECT app_name, name, company, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
+     if(!bookingRows.length)return json({error:'Booking not found.'},404);
+     const existingRows=(await db.prepare('SELECT created_at FROM session_progress WHERE booking_id = ?').bind(bookingId).all()).results;
+     if(!existingRows.length)return json({error:'Session not found.'},404);
+     const bookingRow=bookingRows[0],updatedAt=new Date().toISOString(),remarks=b.remarks.trim();
+     // Google Sheets is the authoritative progress store: the save must reach it successfully
+     // before we touch Supabase or report success to the client. Never show "saved" if this fails.
+     try{
+      await upsertSheetRow(env,{bookingId,date:bookingRow.date,slot:bookingRow.slot,appName:bookingRow.app_name,name:bookingRow.name,company:bookingRow.company,attendance:b.attendance,hoursCompleted:b.hoursCompleted,progressStage:b.progressStage,progressPercent:b.progressPercent,remarks,createdAt:existingRows[0].created_at,updatedAt});
+     }catch(sheetErr){
+      console.error('Google Sheets sync failed for booking',bookingId,String(sheetErr));
+      return json({error:'Progress could not be saved. Please try again.'},502);
+     }
      // updated_by intentionally left null: the current auth model is a single shared editor
      // key with no per-admin identity to attribute the change to.
      const result=await db.prepare('UPDATE session_progress SET attendance=?, hours_completed=?, progress_stage=?, progress_percent=?, remarks=?, updated_at=? WHERE booking_id=?').bind(b.attendance,b.hoursCompleted,b.progressStage,b.progressPercent,remarks,updatedAt,bookingId).run();
-     if((result.meta?.changes??result.changes)===0)return json({error:'Session not found.'},404);
+     if((result.meta?.changes??result.changes)===0){
+      // The authoritative Sheet write already succeeded; a mirror-update miss here is logged,
+      // not treated as a failed save (the next successful save will bring Supabase back in sync).
+      console.error('Supabase session_progress mirror update matched no row for booking',bookingId);
+     }
      return json({bookingId,attendance:b.attendance,hoursCompleted:b.hoursCompleted,progressStage:b.progressStage,progressPercent:b.progressPercent,remarks,updatedAt});
     }
     return json({error:'Not found'},404);
    }
-   if(url.pathname.startsWith('/api/session/')){
+   if(url.pathname==='/api/session'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
-    const bookingId=url.pathname.slice('/api/session/'.length);
+    const bookingId=url.searchParams.get('id')||'';
     if(!uuidPattern.test(bookingId))return json({error:'Malformed booking ID.'},400);
     const bookingRows=(await db.prepare('SELECT id, app_name, name, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
     if(!bookingRows.length)return json({error:'Booking not found.'},404);

@@ -88,7 +88,7 @@ detail=function(a){originalDetail(a);root.querySelector('.breadcrumb a').href='#
 function slotSummary(a){return `<div class="session-chip"><span class="mini-icon" style="--bg:${a.bg};--ink:${a.ink}">${a.symbol}</span><div><strong>${a.name}</strong><small>${selectedDate?dateLabel(selectedDate):'App-development session'}${selectedSlot?' · '+timeLabels[selectedSlot]:' · 1 hour'} · IST</small></div></div>`}
 function booking(a){activeApp=a;document.title=`Choose your slot | ${a.name}`;const days=schedule;root.innerHTML=`<div class="booking-shell"><div class="booking-title"><a class="back" href="#/apps/${a.id}">← ${a.name}</a><h1>A little time.<br class="mobile-break"> A big next step.</h1><p>Choose your one-hour app-development session.</p></div><div class="slot-workspace"><section><div class="section-heading"><h2>Pick a day</h2><span class="event-date-range">APPLICATION SCHEDULE</span></div><div class="dates">${days.map(d=>`<button class="date ${selectedDate===d.date?'selected':''}" data-day="${d.date}" aria-pressed="${selectedDate===d.date}" ${!d.active?'disabled':''}><span>${new Date(d.date+'T12:00Z').toLocaleDateString('en-IN',{weekday:'short'})}</span><strong>${Number(d.date.slice(-2))}</strong><span>${new Date(d.date+'T12:00Z').toLocaleDateString('en-IN',{month:'short'})}</span></button>`).join('')}</div>${loading&&!days.length?'<p role="status">Loading the studio schedule…</p>':''}<div class="section-heading"><h2>Make it your time</h2><span class="timezone">IST · 1 hour</span></div><div class="slots">${availability.filter(s=>s.visible!==false).map(t=>`<button class="slot ${selectedSlot===t.time?'selected':''}" data-time="${t.time}" ${!t.available||loading?'disabled':''} aria-pressed="${selectedSlot===t.time}"><span>${timeLabels[t.time]}</span><small>${selectedSlot===t.time?'✓ Selected':t.available?(availabilityConfirmed?'Available':'Scheduled'):'Unavailable'}</small></button>`).join('')}</div>${!selectedDate?'<p class="slot-hint">Select a day to reveal the available times.</p>':loading?'<p class="slot-hint" role="status">Checking available times…</p>':availability.length===0?'<p class="slot-hint">No sessions are displayed for this day.</p>':''}${bookingError?`<p class="error" role="alert">${esc(bookingError)} <button id="retry">Try again</button></p>`:''}</section><aside class="slot-aside"><div class="eyebrow">YOUR NEXT CHAPTER</div><h2>${a.name}</h2><p>${a.tagline}</p><div class="aside-orbit" aria-hidden="true">${a.symbol}</div><span>1 hour. Your business. Our studio.</span></aside></div><div class="booking-bottom"><div><strong>${selectedSlot?'Nice choice. Your slot is selected.':'Your next step starts here.'}</strong><small>${selectedSlot?dateLabel(selectedDate)+' · '+timeLabels[selectedSlot]+' IST':'Pick a day and time to continue.'}</small></div><a class="primary ${selectedSlot?'':'disabled-link'}" ${selectedSlot?`href="#/apps/${a.id}/details"`:'aria-disabled="true"'}>Continue <span>→</span></a></div></div>`;
 root.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>loadDay(a,b.dataset.day));root.querySelectorAll('[data-time]').forEach(b=>b.onclick=()=>{selectedSlot=b.dataset.time;booking(a);root.querySelector(`[data-time="${selectedSlot}"]`).focus()});root.querySelector('#retry')?.addEventListener('click',()=>loadSchedule(a));}
-async function api(path,options={}){const r=await fetch('/api/'+path,options);let data;try{data=await r.json()}catch{throw Error('The booking service is not connected yet. Please contact the studio.')}if(!r.ok)throw Error(data.error||'Something went wrong. Please try again.');return data;}
+async function api(path,options={}){const r=await fetch('/api/'+path,options);let raw;try{raw=await r.text()}catch{throw Error('The booking service is not connected yet. Please contact the studio.')}let data;try{data=raw?JSON.parse(raw):null}catch{throw Error(`The booking service is not connected yet. Please contact the studio. (status ${r.status}: ${raw.slice(0,120)})`)}if(!r.ok)throw Error(data?.error||'Something went wrong. Please try again.');return data;}
 function scheduledSlots(a,date){return (appSchedule[a.id]||[]).filter(s=>s.date===date).map(s=>({time:s.slot,visible:true,available:+new Date(date+'T'+s.slot+':00+05:30')>Date.now()}));}
 async function loadSchedule(a){const n=++requestNumber;loading=true;availabilityConfirmed=false;bookingError='';schedule=(appSchedule[a.id]||[]).filter(({date})=>date>=new Date(Date.now()+19800000).toISOString().slice(0,10)).map(({date})=>({date,active:true}));selectedDate=schedule[0]?.date||null;availability=selectedDate?scheduledSlots(a,selectedDate):[];booking(a);try{const result=await api('schedule?appId='+encodeURIComponent(a.id));if(n!==requestNumber)return;schedule=result.days;selectedDate=schedule.find(d=>d.active)?.date||null;availability=selectedDate?scheduledSlots(a,selectedDate):[];}catch(e){if(n===requestNumber)bookingError='Showing the planned schedule. Live availability will be checked when the booking service connects.';}finally{if(n===requestNumber){loading=false;booking(a);if(selectedDate)loadDay(a,selectedDate);}}}
 function pickDefaultSlot(list){return list.find(s=>s.visible!==false&&s.available)?.time||null}
@@ -117,6 +117,10 @@ function cardFields(r){return [['Full name',r.name],['Phone number',r.phone],['E
 // window.location.origin so this works unchanged in local dev, Vercel previews and production --
 // never a hard-coded domain. The QR encodes only this public URL, nothing else.
 function sessionUrl(bookingId){return `${location.origin}/#/session/${bookingId}`}
+function qrDataUrl(url,cellSize=6,margin=24){
+ try{if(typeof qrcode!=='function')return null;const qr=qrcode(0,'M');qr.addData(url);qr.make();return qr.createDataURL(cellSize,margin)}catch(e){return null}
+}
+function loadImage(src){return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(Error('QR image failed to load'));img.src=src})}
 function qrBlockHTML(url){
  let img='';
  try{if(typeof qrcode==='function'){const qr=qrcode(0,'M');qr.addData(url);qr.make();img=qr.createImgTag(6,24,'QR code linking to this session’s public progress page')}}catch(e){img=''}
@@ -130,17 +134,31 @@ function confirmed(a){
 }
 async function downloadSessionCard(r){
  await document.fonts.ready;
+ // The QR must be drawn onto this SAME canvas -- the on-screen <img> the browser renders for
+ // the confirmation card lives in the DOM and is never captured by canvas drawing alone.
+ const qrSrc=qrDataUrl(sessionUrl(r.id),6,24);
+ const qrImg=qrSrc?await loadImage(qrSrc).catch(()=>null):null;
+ const QR_LABEL_H=44,QR_GAP=18,QR_CAPTION_H=45;
+ const qrBlockHeight=qrImg?(QR_LABEL_H+QR_GAP+qrImg.width+QR_GAP+QR_CAPTION_H):0;
  const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d');
  const width=1080,pad=70,textWidth=width-pad*2;
  function wrap(text,maxWidth){const lines=[];let line='';for(const char of String(text)){if(ctx.measureText(line+char).width>maxWidth&&line){lines.push(line.trimEnd());line=char}else line+=char}if(line)lines.push(line);return lines}
  ctx.font='600 31px Manrope, sans-serif';const rows=cardFields(r).map(([label,value])=>({label,lines:wrap(value,textWidth)}));
- const height=350+rows.reduce((sum,row)=>sum+72+row.lines.length*39,0)+140;
+ const height=350+rows.reduce((sum,row)=>sum+72+row.lines.length*39,0)+140+qrBlockHeight;
  canvas.width=width*2;canvas.height=height*2;ctx.scale(2,2);
  ctx.fillStyle='#f4f2fb';ctx.fillRect(0,0,width,height);ctx.fillStyle='#171b31';ctx.fillRect(0,0,width,230);
  ctx.fillStyle='#fff';ctx.font='800 39px Manrope, sans-serif';ctx.fillText('MCCIA',pad,85);ctx.fillStyle='#c6b8ff';ctx.font='600 19px Manrope, sans-serif';ctx.fillText('APPLIED AI STUDIO',pad,125);ctx.fillStyle='#d0ffa7';ctx.font='700 24px Manrope, sans-serif';ctx.fillText('SESSION RESERVED',pad,187);
  ctx.fillStyle='#fff';ctx.fillRect(35,260,width-70,height-395);
  let y=318;
  for(const row of rows){ctx.fillStyle='#788093';ctx.font='500 19px Manrope, sans-serif';ctx.fillText(row.label.toUpperCase(),pad,y);y+=37;ctx.fillStyle='#232b40';ctx.font='600 31px Manrope, sans-serif';for(const line of row.lines){ctx.fillText(line,pad,y);y+=39}ctx.strokeStyle='#e5e6ed';ctx.beginPath();ctx.moveTo(pad,y+8);ctx.lineTo(width-pad,y+8);ctx.stroke();y+=35;}
+ if(qrImg){
+  ctx.fillStyle='#5a42be';ctx.font='700 20px Manrope, sans-serif';ctx.textAlign='center';ctx.fillText('SCAN TO VIEW YOUR SESSION',width/2,y+QR_LABEL_H-14);ctx.textAlign='left';
+  y+=QR_LABEL_H+QR_GAP;
+  ctx.drawImage(qrImg,(width-qrImg.width)/2,y,qrImg.width,qrImg.width);
+  y+=qrImg.width+QR_GAP;
+  ctx.fillStyle='#788093';ctx.font='500 15px Manrope, sans-serif';ctx.textAlign='center';ctx.fillText("Scan to open your session's live progress page.",width/2,y+QR_CAPTION_H-30);ctx.textAlign='left';
+  y+=QR_CAPTION_H;
+ }
  ctx.fillStyle='#5a42be';ctx.font='700 22px Manrope, sans-serif';ctx.fillText('CARD REFERENCE · '+r.id.slice(0,8).toUpperCase(),pad,height-83);ctx.fillStyle='#677183';ctx.font='500 20px Manrope, sans-serif';ctx.fillText('Reserved with MCCIA Applied AI Studio.',pad,height-43);
  const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(Error('Could not create PNG')),'image/png'));
  const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`MCCIA-${r.appId}-${r.date}-${r.id.slice(0,8)}.png`;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
@@ -158,7 +176,7 @@ async function sessionView(bookingId){
  sessionInvalidId=!uuidPattern.test(bookingId);
  if(sessionInvalidId){renderSessionView();return}
  sessionLoading=true;renderSessionView();
- try{sessionData=await api('session/'+bookingId)}
+ try{sessionData=await api('session?id='+encodeURIComponent(bookingId))}
  catch(e){sessionError=e.message}
  finally{sessionLoading=false;renderSessionView()}
 }
@@ -216,7 +234,7 @@ function renderEditorSessionView(bookingId){
   const payload={attendance:fd.get('attendance'),hoursCompleted:hours,progressStage:fd.get('progressStage'),progressPercent:percent,remarks:fd.get('remarks')};
   editorSessionForm=payload;editorSessionSaveBusy=true;editorSessionSaveError='';editorSessionSaveMessage='';renderEditorSessionView(bookingId);
   try{
-   const saved=await api('editor/session/'+bookingId,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+editorToken},body:JSON.stringify(payload)});
+   const saved=await api('editor/session?id='+encodeURIComponent(bookingId),{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+editorToken},body:JSON.stringify(payload)});
    editorSessionForm={attendance:saved.attendance,hoursCompleted:saved.hoursCompleted,progressStage:saved.progressStage,progressPercent:saved.progressPercent,remarks:saved.remarks};
    editorSessionDetail={...editorSessionDetail,...editorSessionForm};
    const idx=editorSessions.findIndex(s=>s.id===bookingId);if(idx!==-1)editorSessions[idx]={...editorSessions[idx],...editorSessionForm};

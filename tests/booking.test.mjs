@@ -13,6 +13,12 @@ function testDatabase(){const db=new DatabaseSync(':memory:');db.exec(fs.readFil
 function databaseAdapter(db){return {async batch(statements){db.exec('BEGIN');try{for(const s of statements)await s.run();db.exec('COMMIT')}catch(e){db.exec('ROLLBACK');throw e}},prepare(sql){return{bind(...v){return{async all(){return{results:db.prepare(sql).all(...v)}},async run(){return db.prepare(sql).run(...v)}}}}}}}
 const bookingInsertSql='INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))';
 const editorKey='test-editor-key-with-at-least-32-characters';
+const sheetsEnv={GOOGLE_SHEETS_WEBHOOK_URL:'https://script.google.com/macros/test/exec',GOOGLE_SHEETS_WEBHOOK_SECRET:'test-sheets-secret-at-least-32-characters'};
+function mockSheetsFetch(shouldSucceed,errorMessage){
+ const original=global.fetch,calls=[];
+ global.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(shouldSucceed?{success:true}:{success:false,error:errorMessage||'Sheet unavailable'}),{status:200})};
+ return {calls,restore(){global.fetch=original}};
+}
 
 test('only assigned application dates, exact slots, and valid contacts are accepted',()=>{
  assert.equal(validateBooking(booking,now),null);
@@ -116,7 +122,7 @@ test('public session GET returns only the allowed fields and never phone/email/c
  // response can only mean the field actually leaked, not an incidental word overlap.
  const privateBooking={...booking,company:'Acme Metalworks Pvt Ltd'};
  const created=await (await worker.fetch(request('bookings','POST',privateBooking),{DB})).json();
- const res=await worker.fetch(request('session/'+created.id),{DB});
+ const res=await worker.fetch(request('session?id='+created.id),{DB});
  assert.equal(res.status,200);
  const body=await res.json();
  assert.deepEqual(Object.keys(body).sort(),['appName','date','id','name','progressPercent','progressStage','slot'].sort());
@@ -134,8 +140,8 @@ test('public session GET returns only the allowed fields and never phone/email/c
 
 test('public session GET rejects a malformed booking ID and reports a missing booking',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db);
- assert.equal((await worker.fetch(request('session/not-a-uuid'),{DB})).status,400);
- assert.equal((await worker.fetch(request('session/00000000-0000-4000-8000-000000000000'),{DB})).status,404);
+ assert.equal((await worker.fetch(request('session?id=not-a-uuid'),{DB})).status,400);
+ assert.equal((await worker.fetch(request('session?id=00000000-0000-4000-8000-000000000000'),{DB})).status,404);
  db.close();
 });
 
@@ -143,51 +149,95 @@ test('session progress update is rejected without a valid editor key',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
  const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:50,remarks:'Doing well'};
- const noAuth=await worker.fetch(request('editor/session/'+created.id,'PATCH',update),env);
+ const noAuth=await worker.fetch(request('editor/session?id='+created.id,'PATCH',update),env);
  assert.equal(noAuth.status,401);
- const wrongKey=await worker.fetch(request('editor/session/'+created.id,'PATCH',update,'wrong-key-that-is-not-correct-at-all'),env);
+ const wrongKey=await worker.fetch(request('editor/session?id='+created.id,'PATCH',update,'wrong-key-that-is-not-correct-at-all'),env);
  assert.equal(wrongKey.status,401);
  db.close();
 });
 
-test('authenticated session progress update succeeds, validates fields, and bumps updated_at',async()=>{
- const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
+test('authenticated session progress update succeeds, validates fields, bumps updated_at, and reaches Google Sheets',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey,...sheetsEnv};
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
  const before=db.prepare('SELECT created_at, updated_at FROM session_progress WHERE booking_id = ?').get(created.id);
 
  const validUpdate={attendance:'Present',hoursCompleted:0.75,progressStage:'In Progress',progressPercent:50,remarks:'Engaged and on track'};
  mock.timers.tick(60000); // advance the mocked clock so updated_at is provably later than created_at
- const ok=await worker.fetch(request('editor/session/'+created.id,'PATCH',validUpdate,editorKey),env);
- assert.equal(ok.status,200);
- const okBody=await ok.json();
- assert.equal(okBody.bookingId,created.id);
- assert.equal(okBody.attendance,'Present');
- assert.equal(okBody.hoursCompleted,0.75);
- assert.equal(okBody.progressStage,'In Progress');
- assert.equal(okBody.progressPercent,50);
- assert.equal(okBody.remarks,'Engaged and on track');
- assert.ok(new Date(okBody.updatedAt).getTime()>new Date(before.updated_at).getTime());
+ const sheets=mockSheetsFetch(true);
+ try{
+  const ok=await worker.fetch(request('editor/session?id='+created.id,'PATCH',validUpdate,editorKey),env);
+  assert.equal(ok.status,200);
+  const okBody=await ok.json();
+  assert.equal(okBody.bookingId,created.id);
+  assert.equal(okBody.attendance,'Present');
+  assert.equal(okBody.hoursCompleted,0.75);
+  assert.equal(okBody.progressStage,'In Progress');
+  assert.equal(okBody.progressPercent,50);
+  assert.equal(okBody.remarks,'Engaged and on track');
+  assert.ok(new Date(okBody.updatedAt).getTime()>new Date(before.updated_at).getTime());
 
- const row=db.prepare('SELECT * FROM session_progress WHERE booking_id = ?').get(created.id);
- assert.equal(row.attendance,'Present');
- assert.equal(row.hours_completed,0.75);
- assert.equal(row.progress_stage,'In Progress');
- assert.equal(row.progress_percent,50);
- assert.equal(row.remarks,'Engaged and on track');
- assert.equal(row.created_at,before.created_at); // created_at must never change on update
- assert.equal(row.updated_by,null); // no named-admin identity yet, by design
+  // The Google Sheets webhook must actually have been called, with the right shape.
+  assert.equal(sheets.calls.length,1);
+  assert.equal(sheets.calls[0].url,sheetsEnv.GOOGLE_SHEETS_WEBHOOK_URL);
+  const sentBody=JSON.parse(sheets.calls[0].options.body);
+  assert.equal(sentBody.action,'UPSERT_SESSION');
+  assert.equal(sentBody.secret,sheetsEnv.GOOGLE_SHEETS_WEBHOOK_SECRET);
+  assert.equal(sentBody.session.bookingId,created.id);
+  assert.equal(sentBody.session.attendance,'Present');
+  assert.equal(sentBody.session.appName,'Stocklist');
+  assert.equal(sentBody.session.name,booking.name);
+  assert.equal(sentBody.session.company,booking.company);
 
- for(const invalid of [
-  {...validUpdate,attendance:'Maybe'},
-  {...validUpdate,hoursCompleted:-1},
-  {...validUpdate,progressStage:'Almost Done'},
-  {...validUpdate,progressPercent:-1},
-  {...validUpdate,progressPercent:101},
-  {...validUpdate,progressPercent:50.5},
- ]){
-  const res=await worker.fetch(request('editor/session/'+created.id,'PATCH',invalid,editorKey),env);
-  assert.equal(res.status,400,JSON.stringify(invalid));
- }
+  const row=db.prepare('SELECT * FROM session_progress WHERE booking_id = ?').get(created.id);
+  assert.equal(row.attendance,'Present');
+  assert.equal(row.hours_completed,0.75);
+  assert.equal(row.progress_stage,'In Progress');
+  assert.equal(row.progress_percent,50);
+  assert.equal(row.remarks,'Engaged and on track');
+  assert.equal(row.created_at,before.created_at); // created_at must never change on update
+  assert.equal(row.updated_by,null); // no named-admin identity yet, by design
+
+  for(const invalid of [
+   {...validUpdate,attendance:'Maybe'},
+   {...validUpdate,hoursCompleted:-1},
+   {...validUpdate,progressStage:'Almost Done'},
+   {...validUpdate,progressPercent:-1},
+   {...validUpdate,progressPercent:101},
+   {...validUpdate,progressPercent:50.5},
+  ]){
+   const res=await worker.fetch(request('editor/session?id='+created.id,'PATCH',invalid,editorKey),env);
+   assert.equal(res.status,400,JSON.stringify(invalid));
+  }
+  assert.equal(sheets.calls.length,1); // invalid payloads are rejected before ever reaching Sheets
+ }finally{sheets.restore()}
+ db.close();
+});
+
+test('a failed Google Sheets sync blocks the save and leaves the Supabase mirror unchanged',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey,...sheetsEnv};
+ const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
+ const before=db.prepare('SELECT * FROM session_progress WHERE booking_id = ?').get(created.id);
+
+ const update={attendance:'Present',hoursCompleted:2,progressStage:'Completed',progressPercent:100,remarks:'Should not persist'};
+ const sheets=mockSheetsFetch(false,'Simulated Sheets outage');
+ try{
+  const res=await worker.fetch(request('editor/session?id='+created.id,'PATCH',update,editorKey),env);
+  assert.equal(res.status,502);
+  const body=await res.json();
+  assert.match(body.error,/could not be saved/i);
+ }finally{sheets.restore()}
+
+ const after=db.prepare('SELECT * FROM session_progress WHERE booking_id = ?').get(created.id);
+ assert.deepEqual(after,before); // nothing changed in Supabase when the Sheet write failed
+ db.close();
+});
+
+test('saving with Google Sheets not configured is rejected rather than silently succeeding',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey}; // no Sheets env vars at all
+ const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
+ const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:20,remarks:''};
+ const res=await worker.fetch(request('editor/session?id='+created.id,'PATCH',update,editorKey),env);
+ assert.equal(res.status,502);
  db.close();
 });
 
@@ -207,15 +257,15 @@ test('admin sessions list requires auth and returns booking + progress fields me
  assert.equal(row.hoursCompleted,0);
  assert.equal(row.progressStage,'Not Started');
  assert.equal(row.progressPercent,0);
- // Admin-only fields are present here (unlike the public GET /api/session/:id response).
+ // Admin-only fields are present here (unlike the public GET /api/session response).
  assert.ok('remarks' in row);
  db.close();
 });
 
 test('session progress update reports 404 for a booking that was never created',async()=>{
- const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey,...sheetsEnv};
  const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:50,remarks:''};
- const res=await worker.fetch(request('editor/session/00000000-0000-4000-8000-000000000000','PATCH',update,editorKey),env);
+ const res=await worker.fetch(request('editor/session?id=00000000-0000-4000-8000-000000000000','PATCH',update,editorKey),env);
  assert.equal(res.status,404);
  db.close();
 });
