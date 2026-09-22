@@ -71,10 +71,14 @@ export default {async fetch(request,env){
    // file already returns valid JSON. Flattening every route to one segment (using query params
    // for anything a nested segment used to carry) avoids the problem entirely.
    if(url.pathname.startsWith('/api/editor-')) {
-    if(!env.EDITOR_ACCESS_KEY || env.EDITOR_ACCESS_KEY.length<32) return json({error:'Editor access has not been configured. Contact the studio owner.'},503);
-    const token=request.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
+    // Trimmed defensively: a trailing space/newline picked up when pasting the key into the
+    // Vercel dashboard, or when copying it into the sign-in form, would otherwise silently
+    // produce a mismatch here with no way to tell from the "Invalid editor access key" message.
+    const editorAccessKey=(env.EDITOR_ACCESS_KEY||'').trim();
+    if(!editorAccessKey || editorAccessKey.length<32) return json({error:'Editor access has not been configured. Contact the studio owner.'},503);
+    const token=(request.headers.get('Authorization')?.replace(/^Bearer /,'')||'').trim();
     const hash=async value=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)));
-    const [actual,expected]=await Promise.all([hash(token),hash(env.EDITOR_ACCESS_KEY)]);let diff=0;for(let i=0;i<actual.length;i++)diff|=actual[i]^expected[i];
+    const [actual,expected]=await Promise.all([hash(token),hash(editorAccessKey)]);let diff=0;for(let i=0;i<actual.length;i++)diff|=actual[i]^expected[i];
     if(diff!==0)return json({error:'Invalid editor access key.'},401);
     if(url.pathname==='/api/editor-session'&&request.method==='GET')return json({role:'editor'});
     if(url.pathname==='/api/editor-sessions'&&request.method==='GET'){
