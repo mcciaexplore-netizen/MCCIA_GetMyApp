@@ -80,14 +80,14 @@ test('the server derives app_name from a trusted map and ignores any client-supp
 
 test('editor settings and booking revalidation use the new time slots',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
- assert.equal((await worker.fetch(request('editor/session'),env)).status,401);
+ assert.equal((await worker.fetch(request('editor-session'),env)).status,401);
  const settings={date:'2026-10-01',slots:['11:00','14:30','15:30'].map(time=>({time,visible:true,active:time!=='14:30'}))};
- assert.equal((await worker.fetch(request('editor/availability','PUT',settings,editorKey),env)).status,200);
+ assert.equal((await worker.fetch(request('editor-availability','PUT',settings,editorKey),env)).status,200);
  const available=await (await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),env)).json();
  assert.deepEqual(available.slots.map(s=>s.available),[false]);
  assert.equal((await worker.fetch(request('bookings','POST',booking),env)).status,409);
  settings.slots.find(s=>s.time==='14:30').active=true;
- assert.equal((await worker.fetch(request('editor/availability','PUT',settings,editorKey),env)).status,200);
+ assert.equal((await worker.fetch(request('editor-availability','PUT',settings,editorKey),env)).status,200);
  assert.equal((await worker.fetch(request('bookings','POST',booking),env)).status,201);
  db.close();
 });
@@ -149,9 +149,9 @@ test('session progress update is rejected without a valid editor key',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
  const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:50,remarks:'Doing well'};
- const noAuth=await worker.fetch(request('editor/session?id='+created.id,'PATCH',update),env);
+ const noAuth=await worker.fetch(request('editor-session?id='+created.id,'PATCH',update),env);
  assert.equal(noAuth.status,401);
- const wrongKey=await worker.fetch(request('editor/session?id='+created.id,'PATCH',update,'wrong-key-that-is-not-correct-at-all'),env);
+ const wrongKey=await worker.fetch(request('editor-session?id='+created.id,'PATCH',update,'wrong-key-that-is-not-correct-at-all'),env);
  assert.equal(wrongKey.status,401);
  db.close();
 });
@@ -165,7 +165,7 @@ test('authenticated session progress update succeeds, validates fields, bumps up
  mock.timers.tick(60000); // advance the mocked clock so updated_at is provably later than created_at
  const sheets=mockSheetsFetch(true);
  try{
-  const ok=await worker.fetch(request('editor/session?id='+created.id,'PATCH',validUpdate,editorKey),env);
+  const ok=await worker.fetch(request('editor-session?id='+created.id,'PATCH',validUpdate,editorKey),env);
   assert.equal(ok.status,200);
   const okBody=await ok.json();
   assert.equal(okBody.bookingId,created.id);
@@ -205,7 +205,7 @@ test('authenticated session progress update succeeds, validates fields, bumps up
    {...validUpdate,progressPercent:101},
    {...validUpdate,progressPercent:50.5},
   ]){
-   const res=await worker.fetch(request('editor/session?id='+created.id,'PATCH',invalid,editorKey),env);
+   const res=await worker.fetch(request('editor-session?id='+created.id,'PATCH',invalid,editorKey),env);
    assert.equal(res.status,400,JSON.stringify(invalid));
   }
   assert.equal(sheets.calls.length,1); // invalid payloads are rejected before ever reaching Sheets
@@ -221,7 +221,7 @@ test('a failed Google Sheets sync blocks the save and leaves the Supabase mirror
  const update={attendance:'Present',hoursCompleted:2,progressStage:'Completed',progressPercent:100,remarks:'Should not persist'};
  const sheets=mockSheetsFetch(false,'Simulated Sheets outage');
  try{
-  const res=await worker.fetch(request('editor/session?id='+created.id,'PATCH',update,editorKey),env);
+  const res=await worker.fetch(request('editor-session?id='+created.id,'PATCH',update,editorKey),env);
   assert.equal(res.status,502);
   const body=await res.json();
   assert.match(body.error,/could not be saved/i);
@@ -236,16 +236,16 @@ test('saving with Google Sheets not configured is rejected rather than silently 
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey}; // no Sheets env vars at all
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
  const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:20,remarks:''};
- const res=await worker.fetch(request('editor/session?id='+created.id,'PATCH',update,editorKey),env);
+ const res=await worker.fetch(request('editor-session?id='+created.id,'PATCH',update,editorKey),env);
  assert.equal(res.status,502);
  db.close();
 });
 
 test('admin sessions list requires auth and returns booking + progress fields merged',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
- assert.equal((await worker.fetch(request('editor/sessions'),env)).status,401);
+ assert.equal((await worker.fetch(request('editor-sessions'),env)).status,401);
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
- const res=await worker.fetch(request('editor/sessions',undefined,undefined,editorKey),env);
+ const res=await worker.fetch(request('editor-sessions',undefined,undefined,editorKey),env);
  assert.equal(res.status,200);
  const body=await res.json();
  const row=body.sessions.find(s=>s.id===created.id);
@@ -265,7 +265,7 @@ test('admin sessions list requires auth and returns booking + progress fields me
 test('session progress update reports 404 for a booking that was never created',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey,...sheetsEnv};
  const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:50,remarks:''};
- const res=await worker.fetch(request('editor/session?id=00000000-0000-4000-8000-000000000000','PATCH',update,editorKey),env);
+ const res=await worker.fetch(request('editor-session?id=00000000-0000-4000-8000-000000000000','PATCH',update,editorKey),env);
  assert.equal(res.status,404);
  db.close();
 });

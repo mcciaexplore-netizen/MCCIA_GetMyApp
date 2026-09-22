@@ -62,14 +62,22 @@ export default {async fetch(request,env){
  if(url.pathname.startsWith('/api/')){
   try{
    const db=database(env);
-   if(url.pathname.startsWith('/api/editor/')) {
+   // IMPORTANT: every route below is a single path segment under /api/ (e.g. /api/editor-session,
+   // never /api/editor/session). This was confirmed in production: /api/schedule and /api/bookings
+   // (single segment) are reached by this function correctly, while /api/editor/session (two
+   // segments) returns Vercel's own platform 404 page before ever reaching this code -- proven by
+   // testing all three URLs directly in a browser. This is a routing quirk specific to multi-
+   // segment paths under /api/ on this deployment, not an application bug: every branch in this
+   // file already returns valid JSON. Flattening every route to one segment (using query params
+   // for anything a nested segment used to carry) avoids the problem entirely.
+   if(url.pathname.startsWith('/api/editor-')) {
     if(!env.EDITOR_ACCESS_KEY || env.EDITOR_ACCESS_KEY.length<32) return json({error:'Editor access has not been configured. Contact the studio owner.'},503);
     const token=request.headers.get('Authorization')?.replace(/^Bearer /,'')||'';
     const hash=async value=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)));
     const [actual,expected]=await Promise.all([hash(token),hash(env.EDITOR_ACCESS_KEY)]);let diff=0;for(let i=0;i<actual.length;i++)diff|=actual[i]^expected[i];
     if(diff!==0)return json({error:'Invalid editor access key.'},401);
-    if(url.pathname==='/api/editor/session'&&request.method==='GET')return json({role:'editor'});
-    if(url.pathname==='/api/editor/sessions'&&request.method==='GET'){
+    if(url.pathname==='/api/editor-session'&&request.method==='GET')return json({role:'editor'});
+    if(url.pathname==='/api/editor-sessions'&&request.method==='GET'){
      // Admin-only list combining bookings with their session_progress row. Two queries + a
      // JS-side merge, matching the same pattern already used for the public GET /api/session
      // and for the availability GET above, rather than introducing join support into the DB layer.
@@ -78,28 +86,20 @@ export default {async fetch(request,env){
      const progressByBooking=new Map(progressRows.map(p=>[p.booking_id,p]));
      return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {id:b.id,name:b.name,appName:b.app_name,company:b.company,date:b.date,slot:b.slot,attendance:p.attendance||'Not Marked',hoursCompleted:p.hours_completed??0,progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0,remarks:p.remarks||''}})});
     }
-    if(url.pathname==='/api/editor/availability'&&request.method==='GET') {
+    if(url.pathname==='/api/editor-availability'&&request.method==='GET') {
      const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled application dates.'},400);
      const records=await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all();
      const bookings=await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind(date).all();
      return json({slots:slots.map(time=>{const row=records.results.find(r=>r.slot===time);return {time,visible:row?!!row.visible:true,active:row?!!row.active:true,booked:bookings.results.some(r=>r.slot===time)}})});
     }
-    if(url.pathname==='/api/editor/availability'&&request.method==='PUT'){
+    if(url.pathname==='/api/editor-availability'&&request.method==='PUT'){
      if(request.headers.get('Origin')!==url.origin)return json({error:'Use the studio editor page.'},403);
      const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
      if(!isValidDate(b.date)||!Array.isArray(b.slots)||b.slots.length!==slots.length||new Set(b.slots.map(s=>s.time)).size!==slots.length||b.slots.some(s=>!slots.includes(s.time)||typeof s.visible!=='boolean'||typeof s.active!=='boolean'))return json({error:'Invalid availability settings.'},400);
      await db.batch(b.slots.map(s=>db.prepare('INSERT INTO availability (date, slot, visible, active) VALUES (?, ?, ?, ?) ON CONFLICT(date, slot) DO UPDATE SET visible=excluded.visible, active=excluded.active').bind(b.date,s.time,Number(s.visible),Number(s.active))));
      return json({saved:true});
     }
-    // NOTE: booking id is a QUERY PARAMETER (?id=...), not a path segment, matching the shape
-    // of every other route in this file (/api/bookings, /api/schedule, /api/availability,
-    // /api/editor/availability) that is confirmed working in production. An earlier version of
-    // this route used a nested path segment (/api/editor/session/:id) and, like the equivalent
-    // public /api/session/:id below, was seen returning a non-JSON response in production even
-    // though every code path in this file returns valid JSON on every branch -- consistent with
-    // a platform/routing issue specific to nested dynamic path segments under /api/, not an
-    // application bug. Query-parameter routing avoids that shape entirely.
-    if(url.pathname==='/api/editor/session'&&request.method==='PATCH'){
+    if(url.pathname==='/api/editor-session'&&request.method==='PATCH'){
      if(request.headers.get('Origin')!==url.origin)return json({error:'Use the studio editor page.'},403);
      const bookingId=url.searchParams.get('id')||'';
      if(!uuidPattern.test(bookingId))return json({error:'Malformed booking ID.'},400);
