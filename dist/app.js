@@ -37,7 +37,7 @@ const trailers = {
  'dispatch-flow':'dispatch-flow.mp4', 'tendersetu':'tendersetu.mp4',
  'gst-reconciliation':'gst-reconciliation.mp4', 'card-scanner':'card-scanner.mp4',
  'social-media-planner':'social-media-planner.mp4', 'compliance-calender':'compliance-calender.mp4',
- 'yojanasetu':'yojanasetu.mp4', 'hisabtalk-ai':'document-retriever.mp4',
+ 'yojanasetu':'yojanasetu.mp4', 'digital-profile-creator':'digital-profile-creator.mp4', 'hisabtalk-ai':'document-retriever.mp4',
  'stocklist':'stocklist.mp4', 'production-saathi':'production-saathi.mp4',
  'minicrm':'minicrm.mp4', 'mr-wasooli':'payment-followup-agent.mp4', 'hr-studio':'hr-studio.mp4'
 };
