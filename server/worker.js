@@ -1,11 +1,11 @@
-const validApps = new Set(['dispatch-flow','tendersetu','gst-reconciliation','card-scanner','social-media-planner','digital-profile-creator','mr-wasooli','hr-studio','stocklist','minicrm',"compliance-calender","yojanasetu","hisabtalk-ai","review-desk","production-saathi"]);
+const validApps = new Set(['dispatch-flow','tendersetu','gst-reconciliation','card-scanner','social-media-planner','digital-profile-creator','mr-wasooli','hr-studio','stocklist','minicrm',"compliance-calender","yojanasetu","hisabtalk-ai","ai-procurement-agent","production-saathi"]);
 // Trusted appId -> display name map. Never take app_name from the request body; always derive it from here.
 const appNames = {
  'dispatch-flow':'Dispatch Flow','tendersetu':'TenderSetu','gst-reconciliation':'GST Reconciliation',
  'card-scanner':'Card Scanner','social-media-planner':'Social Media Planner','digital-profile-creator':'Digital Profile Creator',
  'mr-wasooli':'Payment Followup Agent','hr-studio':'HR Studio','stocklist':'Stocklist','minicrm':'MiniCRM',
- 'compliance-calender':'Compliance Calender','yojanasetu':'YojanaSetu','hisabtalk-ai':'HisabTalk AI',
- 'review-desk':'Review Desk','production-saathi':'Production Saathi'
+ 'compliance-calender':'Compliance Calender','yojanasetu':'YojanaSetu','hisabtalk-ai':'Document Retriever',
+ 'ai-procurement-agent':'AI Procurement Agent','production-saathi':'Production Saathi'
 };
 const slots = ['11:00','14:30','15:30'];
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,7 +26,7 @@ const appSchedule = {
  'compliance-calender':[{date:'2026-10-09',slot:'14:30'}],
  'yojanasetu':[{date:'2026-10-09',slot:'15:30'}],
  'hisabtalk-ai':[{date:'2026-10-03',slot:'11:00'},{date:'2026-10-06',slot:'15:30'}],
- 'review-desk':[{date:'2026-10-03',slot:'14:30'},{date:'2026-10-08',slot:'15:30'}],
+ 'ai-procurement-agent':[{date:'2026-10-03',slot:'14:30'},{date:'2026-10-08',slot:'15:30'}],
  'production-saathi':[{date:'2026-10-03',slot:'15:30'},{date:'2026-10-05',slot:'14:30'}]
 };
 const eventDates = [...new Set(Object.values(appSchedule).flat().map(({date})=>date))].sort();
