@@ -140,12 +140,14 @@ export default {async fetch(request,env){
     }
     return json({error:'Not found'},404);
    }
-   // TEMPORARY diagnostic while chasing a persistent "not configured" report -- reveals only
-   // presence/length, NEVER the actual value, so it's safe to leave reachable without auth while
-   // debugging. Remove once the root cause is confirmed and fixed.
-   if(url.pathname==='/api/editor-diag'&&request.method==='GET'){
-    const raw=env.EDITOR_ACCESS_KEY;
-    return json({present:typeof raw==='string',rawLength:typeof raw==='string'?raw.length:0,trimmedLength:typeof raw==='string'?raw.trim().length:0,rawType:typeof raw});
+   if(url.pathname==='/api/progress'&&request.method==='GET'){
+    // Public, unauthenticated, shared across every visitor -- deliberately excludes name, date,
+    // slot, phone, email and remarks. Only company + application + progress, so seeing this list
+    // never identifies a specific person, matching what was explicitly asked for this view.
+    const bookingRows=(await db.prepare('SELECT id, app_name, company FROM bookings').bind().all()).results;
+    const progressRows=(await db.prepare('SELECT booking_id, progress_stage, progress_percent FROM session_progress').bind().all()).results;
+    const progressByBooking=new Map(progressRows.map(p=>[p.booking_id,p]));
+    return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {appName:b.app_name,company:b.company,progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0}})});
    }
    if(url.pathname==='/api/session'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);

@@ -241,6 +241,26 @@ test('saving with Google Sheets not configured is rejected rather than silently 
  db.close();
 });
 
+test('public progress list requires no auth and never exposes name/date/slot/phone/email/remarks',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db);
+ const privateBooking={...booking,name:'Very Private Name',company:'Acme Metalworks Pvt Ltd'};
+ await worker.fetch(request('bookings','POST',privateBooking),{DB});
+ const res=await worker.fetch(request('progress'),{DB});
+ assert.equal(res.status,200);
+ const body=await res.json();
+ const row=body.sessions.find(s=>s.company===privateBooking.company);
+ assert.ok(row,'the new booking must appear in the shared progress list');
+ assert.deepEqual(Object.keys(row).sort(),['appName','company','progressPercent','progressStage'].sort());
+ assert.equal(row.appName,'Stocklist');
+ assert.equal(row.progressStage,'Not Started');
+ assert.equal(row.progressPercent,0);
+ const raw=JSON.stringify(body);
+ assert.equal(raw.includes(privateBooking.name),false);
+ assert.equal(raw.includes(privateBooking.phone),false);
+ assert.equal(raw.includes(privateBooking.email),false);
+ db.close();
+});
+
 test('admin sessions list requires auth and returns booking + progress fields merged',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
  assert.equal((await worker.fetch(request('editor-sessions'),env)).status,401);

@@ -129,7 +129,7 @@ function qrBlockHTML(url){
 function confirmed(a){
  if(!receipt||receipt.appId!==a.id){location.hash='#/apps';return}
  document.title='Your session card | MCCIA AI Studio';
- root.innerHTML=`<div class="session-result"><div class="finish-header"><div class="finish-check">✓</div><h1>Your session is reserved.</h1><p>Download your card and keep your selected session details together.</p></div><article class="download-card" aria-label="Your session request card"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">SESSION RESERVED</span></div><div class="download-card-body"><div class="eyebrow">LET’S BUILD WHAT’S NEXT</div><h2>${esc(receipt.appName)}</h2><dl>${cardFields(receipt).map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${qrBlockHTML(sessionUrl(receipt.id))}</div><div class="download-card-foot"><strong>Card reference · ${esc(receipt.id.slice(0,8).toUpperCase())}</strong><span>Reserved with MCCIA Applied AI Studio.</span></div></article><div class="card-actions"><button id="download-card" class="primary">Download card (PNG) ↓</button><a class="text-button" href="#/session/${receipt.id}">View session →</a><a class="text-button" href="#/apps/${a.id}/details">Edit details</a></div><p id="card-download-status" role="status"></p><p class="card-privacy-note">This card image is only saved to your device when you download it.</p><a class="back" href="#/apps">← Explore applications</a></div>`;
+ root.innerHTML=`<div class="session-result"><div class="finish-header"><div class="finish-check">✓</div><h1>Your session is reserved.</h1><p>Download your card and keep your selected session details together.</p></div><article class="download-card" aria-label="Your session request card"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">SESSION RESERVED</span></div><div class="download-card-body"><div class="eyebrow">LET’S BUILD WHAT’S NEXT</div><h2>${esc(receipt.appName)}</h2><dl>${cardFields(receipt).map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${qrBlockHTML(sessionUrl(receipt.id))}</div><div class="download-card-foot"><strong>Card reference · ${esc(receipt.id.slice(0,8).toUpperCase())}</strong><span>Reserved with MCCIA Applied AI Studio.</span></div></article><div class="card-actions"><button id="download-card" class="primary">Download card (PNG) ↓</button><a class="text-button" href="#/session/${receipt.id}">View session →</a><a class="text-button" href="#/apps/${a.id}/details">Edit details</a></div><p id="card-download-status" role="status"></p><p class="card-privacy-note">This card image is only saved to your device when you download it.</p><p class="progress-link"><a class="text-button" href="#/progress">See everyone’s progress →</a></p><a class="back" href="#/apps">← Explore applications</a></div>`;
  root.querySelector('#download-card').onclick=async e=>{const button=e.currentTarget;button.disabled=true;button.textContent='Preparing your card…';try{await downloadSessionCard(receipt);root.querySelector('#card-download-status').textContent='Download started. Your session card is ready to save.'}catch{root.querySelector('#card-download-status').textContent='The download could not be created. Please try again.'}finally{button.disabled=false;button.textContent='Download card (PNG) ↓'}};
 }
 async function downloadSessionCard(r){
@@ -169,30 +169,119 @@ function progressBar(percent){return `<div class="progress-track" role="progress
 function fullDate(date){return new Date(date+'T12:00Z').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Kolkata'})}
 
 // ---- Public session view (#/session/:bookingId) ----
+// Also doubles as the QR-scanned staff edit view: if a staff member is already signed in
+// (editorToken set, e.g. from a previous #/editor visit in this browser), or unlocks inline with
+// the access key on this page, the SAME url shows editable fields instead of the read-only card.
 let sessionData=null,sessionError='',sessionLoading=false,sessionInvalidId=false;
+let sessionEditForm=null,sessionSaveBusy=false,sessionSaveError='',sessionSaveMessage='';
+let sessionUnlockBusy=false,sessionUnlockError='';
 async function sessionView(bookingId){
  document.title='Session | MCCIA AI Studio';
- sessionData=null;sessionError='';
+ sessionData=null;sessionError='';sessionEditForm=null;sessionSaveMessage='';sessionSaveError='';sessionUnlockError='';
  sessionInvalidId=!uuidPattern.test(bookingId);
- if(sessionInvalidId){renderSessionView();return}
- sessionLoading=true;renderSessionView();
- try{sessionData=await api('session?id='+encodeURIComponent(bookingId))}
- catch(e){sessionError=e.message}
- finally{sessionLoading=false;renderSessionView()}
+ if(sessionInvalidId){renderSessionView(bookingId);return}
+ sessionLoading=true;renderSessionView(bookingId);
+ try{
+  if(editorToken){
+   // Already signed in as staff in this browser -- load full admin-level fields and go
+   // straight to the editable view, matching what the dashboard's "View session" link shows.
+   const r=await api('editor-sessions',{headers:{Authorization:'Bearer '+editorToken}});
+   const row=r.sessions.find(s=>s.id===bookingId);
+   if(!row)sessionError='Session not found.';
+   else{sessionData=row;sessionEditForm={attendance:row.attendance,hoursCompleted:row.hoursCompleted,progressStage:row.progressStage,progressPercent:row.progressPercent,remarks:row.remarks}}
+  }else{
+   sessionData=await api('session?id='+encodeURIComponent(bookingId));
+  }
+ }catch(e){sessionError=e.message}
+ finally{sessionLoading=false;renderSessionView(bookingId)}
 }
-function renderSessionView(){
+function renderSessionView(bookingId){
+ const editMode=!!(editorToken&&sessionEditForm);
  root.innerHTML=`<div class="container session-view"><div class="finish-header"><div class="eyebrow">MCCIA APPLIED AI STUDIO</div><h1>Session</h1></div>${
   sessionInvalidId?`<p class="error" role="alert">This session link is not valid.</p>`
   :sessionLoading?`<p role="status">Loading session…</p>`
   :sessionError?`<p class="error" role="alert">${esc(sessionError)}</p>`
-  :sessionData?`<article class="download-card" aria-label="Session progress"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">${esc(sessionData.progressStage.toUpperCase())}</span></div><div class="download-card-body"><div class="eyebrow">PARTICIPANT</div><h2>${esc(sessionData.name)}</h2><dl class="session-summary-grid"><div><dt>Application</dt><dd>${esc(sessionData.appName)}</dd></div><div><dt>Date</dt><dd>${fullDate(sessionData.date)}</dd></div><div><dt>Time</dt><dd>${timeLabels[sessionData.slot]||esc(sessionData.slot)} IST</dd></div></dl><div class="progress-block"><div class="eyebrow">PROGRESS</div><strong>${esc(sessionData.progressStage)}</strong>${progressBar(sessionData.progressPercent)}<span class="progress-percent">${sessionData.progressPercent}%</span></div></div></article>`
-  :''
+  :!sessionData?''
+  :editMode?`<div class="editor-board"><dl class="session-summary-grid"><div><dt>Participant</dt><dd>${esc(sessionData.name)}</dd></div><div><dt>Application</dt><dd>${esc(sessionData.appName)}</dd></div><div><dt>Date</dt><dd>${dateLabel(sessionData.date)}</dd></div><div><dt>Time</dt><dd>${timeLabels[sessionData.slot]||esc(sessionData.slot)}</dd></div><div><dt>Company</dt><dd>${esc(sessionData.company||'—')}</dd></div></dl>
+    ${progressEditFormHTML(sessionEditForm,sessionSaveBusy,sessionSaveError)}
+    ${sessionSaveMessage?`<p class="editor-message" role="status">${esc(sessionSaveMessage)}</p>`:''}
+    <button type="button" class="text-button" id="session-staff-signout" style="margin-top:14px">Sign out of staff mode</button>
+   </div>`
+  :`<article class="download-card" aria-label="Session progress"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">${esc(sessionData.progressStage.toUpperCase())}</span></div><div class="download-card-body"><div class="eyebrow">PARTICIPANT</div><h2>${esc(sessionData.name)}</h2><dl class="session-summary-grid"><div><dt>Application</dt><dd>${esc(sessionData.appName)}</dd></div><div><dt>Date</dt><dd>${fullDate(sessionData.date)}</dd></div><div><dt>Time</dt><dd>${timeLabels[sessionData.slot]||esc(sessionData.slot)} IST</dd></div></dl><div class="progress-block"><div class="eyebrow">PROGRESS</div><strong>${esc(sessionData.progressStage)}</strong>${progressBar(sessionData.progressPercent)}<span class="progress-percent">${sessionData.progressPercent}%</span></div></div></article>
+   <p class="progress-link"><a class="text-button" href="#/progress">See everyone's progress →</a></p>
+   <details class="staff-unlock"><summary>Staff sign-in</summary><form id="session-unlock-form"><label>Access key<div class="password-field"><input type="password" name="key" required id="session-key-input"><button type="button" id="session-toggle-key">Show</button></div></label>${sessionUnlockError?`<p class="error" role="alert">${esc(sessionUnlockError)}</p>`:''}<button class="primary" ${sessionUnlockBusy?'disabled':''}>${sessionUnlockBusy?'Checking…':'Unlock editing'}</button></form></details>`
  }<a class="back" href="#/apps">← Explore applications</a></div>`;
+ root.querySelector('#session-toggle-key')?.addEventListener('click',e=>{const input=root.querySelector('#session-key-input'),btn=e.currentTarget;const showing=input.type==='text';input.type=showing?'password':'text';btn.textContent=showing?'Show':'Hide'});
+ root.querySelector('#session-unlock-form')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const key=new FormData(e.target).get('key').trim();
+  sessionUnlockBusy=true;sessionUnlockError='';renderSessionView(bookingId);
+  try{await api('editor-session',{headers:{Authorization:'Bearer '+key}});editorToken=key;sessionUnlockBusy=false;sessionView(bookingId)}
+  catch(err){sessionUnlockBusy=false;sessionUnlockError=err.message;renderSessionView(bookingId)}
+ });
+ root.querySelector('#session-staff-signout')?.addEventListener('click',()=>{editorToken='';sessionEditForm=null;sessionView(bookingId)});
+ bindProgressForm(bookingId,
+  form=>{sessionEditForm=form;sessionData={...sessionData,...form}},
+  busy=>sessionSaveBusy=busy,
+  err=>sessionSaveError=err,
+  msg=>sessionSaveMessage=msg,
+  ()=>renderSessionView(bookingId));
+}
+
+// ---- Shared progress view (#/progress) -- public, company + application only, never names ----
+let progressList=null,progressError='',progressLoading=false;
+async function progressView(){
+ document.title='Everyone’s progress | MCCIA AI Studio';
+ progressLoading=true;progressError='';renderProgressView();
+ try{progressList=(await api('progress')).sessions}
+ catch(e){progressError=e.message}
+ finally{progressLoading=false;renderProgressView()}
+}
+function renderProgressView(){
+ root.innerHTML=`<div class="container session-view"><div class="finish-header"><div class="eyebrow">MCCIA APPLIED AI STUDIO</div><h1>Everyone’s progress</h1><p>See how other MSMEs are progressing through their sessions.</p></div>${
+  progressLoading?'<p role="status">Loading…</p>'
+  :progressError?`<p class="error" role="alert">${esc(progressError)}</p>`
+  :!progressList?''
+  :progressList.length?`<div class="sessions-table-wrap"><table class="sessions-table"><thead><tr><th>Company</th><th>Application</th><th>Stage</th><th>%</th></tr></thead><tbody>${progressList.map(s=>`<tr><td>${esc(s.company||'—')}</td><td>${esc(s.appName)}</td><td><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span></td><td>${s.progressPercent}%</td></tr>`).join('')}</tbody></table></div>`
+  :'<p>No sessions yet.</p>'
+ }<a class="back" href="#/apps">← Explore applications</a></div>`;
+}
+
+// ---- Shared attendance/progress edit form (used by the admin edit page AND the QR/public
+// session page once a staff member unlocks it inline) ----
+const attendanceOptions=['Not Marked','Present','Absent'],progressStageOptions=['Not Started','In Progress','Completed'];
+function progressEditFormHTML(form,busy,error){return `<form id="session-edit-form" class="session-edit-form">
+ <label>Attendance<select name="attendance">${attendanceOptions.map(v=>`<option value="${v}" ${form.attendance===v?'selected':''}>${v}</option>`).join('')}</select></label>
+ <label>Hours completed<input type="number" name="hoursCompleted" min="0" max="99.99" step="0.25" value="${form.hoursCompleted}"></label>
+ <label>Progress stage<select name="progressStage">${progressStageOptions.map(v=>`<option value="${v}" ${form.progressStage===v?'selected':''}>${v}</option>`).join('')}</select></label>
+ <label>Progress percentage<input type="number" name="progressPercent" min="0" max="100" step="1" value="${form.progressPercent}"></label>
+ <label>Remarks<textarea name="remarks" maxlength="2000">${esc(form.remarks)}</textarea></label>
+ ${error?`<p class="error" role="alert">${esc(error)}</p>`:''}
+ <button class="primary" ${busy?'disabled':''}>${busy?'Saving…':'Save progress'}</button>
+</form>`}
+// Wires the #session-edit-form submit handler. getForm/setForm/setBusy/setError/setMessage are
+// small closures owned by the caller so this same wiring works for both the admin edit page and
+// the QR/public page's inline unlocked edit, each with their own local state + re-render.
+function bindProgressForm(bookingId,setForm,setBusy,setError,setMessage,rerender){
+ root.querySelector('#session-edit-form')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const form=e.target,fd=new FormData(form);
+  const hours=parseFloat(fd.get('hoursCompleted')),percent=parseInt(fd.get('progressPercent'),10);
+  if(isNaN(hours)||hours<0){form.elements.hoursCompleted.setCustomValidity('Enter hours completed as 0 or greater.');form.elements.hoursCompleted.reportValidity();return}
+  if(isNaN(percent)||percent<0||percent>100){form.elements.progressPercent.setCustomValidity('Enter a percentage between 0 and 100.');form.elements.progressPercent.reportValidity();return}
+  const payload={attendance:fd.get('attendance'),hoursCompleted:hours,progressStage:fd.get('progressStage'),progressPercent:percent,remarks:fd.get('remarks')};
+  setForm(payload);setBusy(true);setError('');setMessage('');rerender();
+  try{
+   const saved=await api('editor-session?id='+encodeURIComponent(bookingId),{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+editorToken},body:JSON.stringify(payload)});
+   setForm({attendance:saved.attendance,hoursCompleted:saved.hoursCompleted,progressStage:saved.progressStage,progressPercent:saved.progressPercent,remarks:saved.remarks});
+   setMessage('Progress saved.');
+  }catch(err){setError(err.message)}
+  finally{setBusy(false);rerender()}
+ });
 }
 
 // ---- Admin session detail (#/editor/session/:bookingId) ----
 let editorSessionDetail=null,editorSessionDetailError='',editorSessionDetailLoading=false,editorSessionForm=null,editorSessionSaveBusy=false,editorSessionSaveMessage='',editorSessionSaveError='';
-const attendanceOptions=['Not Marked','Present','Absent'],progressStageOptions=['Not Started','In Progress','Completed'];
 async function editorSessionView(bookingId){
  if(!editorToken){location.hash='#/editor';return}
  document.title='Session detail | MCCIA AI Studio';
@@ -213,51 +302,51 @@ function renderEditorSessionView(bookingId){
   :editorSessionDetailError?`<p class="error" role="alert">${esc(editorSessionDetailError)}</p>`
   :!editorSessionDetail?'<p class="error" role="alert">Session not found.</p>'
   :`<div class="editor-board"><dl class="session-summary-grid"><div><dt>Participant</dt><dd>${esc(editorSessionDetail.name)}</dd></div><div><dt>Application</dt><dd>${esc(editorSessionDetail.appName)}</dd></div><div><dt>Date</dt><dd>${dateLabel(editorSessionDetail.date)}</dd></div><div><dt>Time</dt><dd>${timeLabels[editorSessionDetail.slot]||esc(editorSessionDetail.slot)}</dd></div><div><dt>Company</dt><dd>${esc(editorSessionDetail.company||'—')}</dd></div><div><dt>Booking ID</dt><dd>${esc(editorSessionDetail.id)}</dd></div></dl>
-    <form id="session-edit-form" class="session-edit-form">
-     <label>Attendance<select name="attendance">${attendanceOptions.map(v=>`<option value="${v}" ${editorSessionForm.attendance===v?'selected':''}>${v}</option>`).join('')}</select></label>
-     <label>Hours completed<input type="number" name="hoursCompleted" min="0" max="99.99" step="0.25" value="${editorSessionForm.hoursCompleted}"></label>
-     <label>Progress stage<select name="progressStage">${progressStageOptions.map(v=>`<option value="${v}" ${editorSessionForm.progressStage===v?'selected':''}>${v}</option>`).join('')}</select></label>
-     <label>Progress percentage<input type="number" name="progressPercent" min="0" max="100" step="1" value="${editorSessionForm.progressPercent}"></label>
-     <label>Remarks<textarea name="remarks" maxlength="2000">${esc(editorSessionForm.remarks)}</textarea></label>
-     ${editorSessionSaveError?`<p class="error" role="alert">${esc(editorSessionSaveError)}</p>`:''}
-     <button class="primary" ${editorSessionSaveBusy?'disabled':''}>${editorSessionSaveBusy?'Saving…':'Save progress'}</button>
-    </form>
+    ${progressEditFormHTML(editorSessionForm,editorSessionSaveBusy,editorSessionSaveError)}
     ${editorSessionSaveMessage?`<p class="editor-message" role="status">${esc(editorSessionSaveMessage)}</p>`:''}
    </div>`
  }</div>`;
- root.querySelector('#session-edit-form')?.addEventListener('submit',async e=>{
-  e.preventDefault();
-  const form=e.target,fd=new FormData(form);
-  const hours=parseFloat(fd.get('hoursCompleted')),percent=parseInt(fd.get('progressPercent'),10);
-  if(isNaN(hours)||hours<0){form.elements.hoursCompleted.setCustomValidity('Enter hours completed as 0 or greater.');form.elements.hoursCompleted.reportValidity();return}
-  if(isNaN(percent)||percent<0||percent>100){form.elements.progressPercent.setCustomValidity('Enter a percentage between 0 and 100.');form.elements.progressPercent.reportValidity();return}
-  const payload={attendance:fd.get('attendance'),hoursCompleted:hours,progressStage:fd.get('progressStage'),progressPercent:percent,remarks:fd.get('remarks')};
-  editorSessionForm=payload;editorSessionSaveBusy=true;editorSessionSaveError='';editorSessionSaveMessage='';renderEditorSessionView(bookingId);
-  try{
-   const saved=await api('editor-session?id='+encodeURIComponent(bookingId),{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+editorToken},body:JSON.stringify(payload)});
-   editorSessionForm={attendance:saved.attendance,hoursCompleted:saved.hoursCompleted,progressStage:saved.progressStage,progressPercent:saved.progressPercent,remarks:saved.remarks};
-   editorSessionDetail={...editorSessionDetail,...editorSessionForm};
-   const idx=editorSessions.findIndex(s=>s.id===bookingId);if(idx!==-1)editorSessions[idx]={...editorSessions[idx],...editorSessionForm};
-   editorSessionSaveMessage='Progress saved.';
-  }catch(err){editorSessionSaveError=err.message}
-  finally{editorSessionSaveBusy=false;renderEditorSessionView(bookingId)}
- });
+ bindProgressForm(bookingId,
+  form=>{editorSessionForm=form;editorSessionDetail={...editorSessionDetail,...form};const idx=editorSessions.findIndex(s=>s.id===bookingId);if(idx!==-1)editorSessions[idx]={...editorSessions[idx],...form}},
+  busy=>editorSessionSaveBusy=busy,
+  err=>editorSessionSaveError=err,
+  msg=>editorSessionSaveMessage=msg,
+  ()=>renderEditorSessionView(bookingId));
 }
 
 let editorToken='',editorDate='',editorMessage='',editorSlots=null;
-let editorTab='sessions',editorSessions=null,editorSessionsError='',editorSessionsLoading=false;
+let editorTab='sessions',editorSessions=null,editorSessionsError='',editorSessionsLoading=false,calendarExpandedDate=null;
 const attendanceStyles={'Not Marked':'background:#f1eefb;color:#6647eb','Present':'background:#e6f7ec;color:#1e8a4c','Absent':'background:#fdeceb;color:#c23b34'};
 const stageStyles={'Not Started':'background:#f1eefb;color:#6647eb','In Progress':'background:#fff6df;color:#a5720b','Completed':'background:#e6f7ec;color:#1e8a4c'};
 function availabilityPanelHTML(){return `<div class="editor-toolbar"><label>Choose a date<select id="editor-date"><option value="">Select a scheduled date</option>${eventDates.map(date=>`<option value="${date}" ${date===editorDate?'selected':''}>${dateLabel(date)} 2026</option>`).join('')}</select></label></div><div class="editor-board">${editorSlots?`<div class="section-heading"><h2>${dateLabel(editorDate)}</h2><span>Changes apply to all applications</span></div><form id="editor-save"><div class="day-actions"><button type="button" data-day-action="show">Show day</button><button type="button" data-day-action="hide">Hide day</button><button type="button" data-day-action="activate">Activate day</button><button type="button" data-day-action="deactivate">Deactivate day</button></div><div class="editor-row editor-table-head"><span>One-hour session</span><span>Display</span><span>Active</span></div>${editorSlots.map(s=>`<div class="editor-row"><strong>${timeLabels[s.time]}</strong><label><input type="checkbox" data-visible="${s.time}" ${s.visible?'checked':''} aria-label="Display ${timeLabels[s.time]}"><span>Show</span></label><label><input type="checkbox" data-active="${s.time}" ${s.active?'checked':''} ${s.booked?'disabled':''} aria-label="Activate ${timeLabels[s.time]}"><span>${s.booked?'Booked':'Bookable'}</span></label></div>`).join('')}<p>Hidden slots do not appear to visitors. Inactive slots remain visible but cannot be booked. Existing bookings are preserved.</p><button class="primary">Save availability ✓</button></form>`:'<p>Select a scheduled date to manage its three session slots.</p>'}</div>`}
 function sessionsPanelHTML(){return `<div class="editor-board"><div class="section-heading"><h2>Sessions</h2><span>${editorSessions?editorSessions.length+' total':''}</span></div>${editorSessionsLoading?'<p role="status">Loading sessions…</p>':''}${editorSessionsError?`<p class="error" role="alert">${esc(editorSessionsError)} <button type="button" id="retry-sessions">Try again</button></p>`:''}${editorSessions&&!editorSessionsLoading?(editorSessions.length?`<div class="sessions-table-wrap"><table class="sessions-table"><thead><tr><th>Participant</th><th>Application</th><th>Date</th><th>Time</th><th>Company</th><th>Attendance</th><th>Hours</th><th>Stage</th><th>%</th><th></th></tr></thead><tbody>${editorSessions.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.appName)}</td><td>${dateLabel(s.date)}</td><td>${timeLabels[s.slot]||esc(s.slot)}</td><td>${esc(s.company||'—')}</td><td><span class="status-pill" style="${attendanceStyles[s.attendance]||''}">${esc(s.attendance)}</span></td><td>${s.hoursCompleted}</td><td><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span></td><td>${s.progressPercent}%</td><td><a class="text-button" href="#/editor/session/${s.id}">View session</a></td></tr>`).join('')}</tbody></table></div>`:'<p>No bookings yet.</p>'):''}</div>`}
+function calendarPanelHTML(){
+ if(!editorSessions)return `<div class="editor-board">${editorSessionsLoading?'<p role="status">Loading calendar…</p>':editorSessionsError?`<p class="error" role="alert">${esc(editorSessionsError)} <button type="button" id="retry-sessions">Try again</button></p>`:''}</div>`;
+ const byDate=new Map();
+ for(const s of editorSessions){if(!byDate.has(s.date))byDate.set(s.date,[]);byDate.get(s.date).push(s)}
+ const dates=[...byDate.keys()].sort();
+ return `<div class="editor-board"><div class="section-heading"><h2>Calendar</h2><span>${editorSessions.length} total ${editorSessions.length===1?'booking':'bookings'}</span></div>${dates.length===0?'<p>No bookings yet.</p>':`<div class="calendar-grid">${dates.map(date=>{
+  const daySessions=byDate.get(date).slice().sort((a,b)=>a.slot.localeCompare(b.slot));
+  const expanded=calendarExpandedDate===date;
+  return `<div class="calendar-day ${expanded?'expanded':''}">
+   <button type="button" class="calendar-day-toggle" data-calendar-date="${date}" aria-expanded="${expanded}">
+    <span class="calendar-day-date">${dateLabel(date)}</span>
+    <span class="calendar-day-count">${daySessions.length} ${daySessions.length===1?'booking':'bookings'}</span>
+    <span class="calendar-day-arrow" aria-hidden="true">${expanded?'▲':'▼'}</span>
+   </button>
+   ${expanded?`<div class="calendar-day-detail sessions-table-wrap"><table class="sessions-table"><thead><tr><th>Time</th><th>Participant</th><th>Application</th><th>Company</th><th>Attendance</th><th>Stage</th><th>%</th><th></th></tr></thead><tbody>${daySessions.map(s=>`<tr><td>${timeLabels[s.slot]||esc(s.slot)}</td><td>${esc(s.name)}</td><td>${esc(s.appName)}</td><td>${esc(s.company||'—')}</td><td><span class="status-pill" style="${attendanceStyles[s.attendance]||''}">${esc(s.attendance)}</span></td><td><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span></td><td>${s.progressPercent}%</td><td><a class="text-button" href="#/editor/session/${s.id}">View session</a></td></tr>`).join('')}</tbody></table></div>`:''}
+  </div>`;
+ }).join('')}</div>`}</div>`;
+}
 async function loadEditorSessions(){editorSessionsLoading=true;editorSessionsError='';editor();try{const r=await api('editor-sessions',{headers:{Authorization:'Bearer '+editorToken}});editorSessions=r.sessions}catch(e){editorSessionsError=e.message}finally{editorSessionsLoading=false;editor()}}
-function editor(){document.title='Studio access | MCCIA AI Studio';root.innerHTML=`<div class="editor-shell">${!editorToken?`<div class="eyebrow">STUDIO ACCESS</div><h1>Make room for what’s next.</h1><p>Manage the days and times people can book.</p><form id="editor-login" class="editor-login"><h2>Editor sign in</h2><p>Use your studio editor access key.</p><label>Access key<div class="password-field"><input type="password" name="key" required autocomplete="current-password" id="editor-key-input"><button type="button" id="toggle-key-visibility" aria-label="Show access key">Show</button></div></label><button class="primary">Sign in →</button></form>`:`<div class="editor-toolbar"><div class="eyebrow">GETMYAPP ADMIN</div><button class="text-button" id="sign-out">Sign out</button></div><div class="admin-nav" role="tablist">${[['dashboard','Dashboard'],['sessions','Sessions'],['availability','Availability']].map(([key,label])=>`<button type="button" class="admin-nav-item ${editorTab===key?'selected':''}" data-tab="${key}" role="tab" aria-selected="${editorTab===key}">${label}</button>`).join('')}</div>${editorTab==='availability'?availabilityPanelHTML():sessionsPanelHTML()}`}${editorMessage?`<p class="editor-message" role="status">${esc(editorMessage)}</p>`:''}</div>`;
+function editor(){document.title='Studio access | MCCIA AI Studio';root.innerHTML=`<div class="editor-shell">${!editorToken?`<div class="eyebrow">STUDIO ACCESS</div><h1>Make room for what’s next.</h1><p>Manage the days and times people can book.</p><form id="editor-login" class="editor-login"><h2>Editor sign in</h2><p>Use your studio editor access key.</p><label>Access key<div class="password-field"><input type="password" name="key" required autocomplete="current-password" id="editor-key-input"><button type="button" id="toggle-key-visibility" aria-label="Show access key">Show</button></div></label><button class="primary">Sign in →</button></form>`:`<div class="editor-toolbar"><div class="eyebrow">GETMYAPP ADMIN</div><button class="text-button" id="sign-out">Sign out</button></div><div class="admin-nav" role="tablist">${[['dashboard','Dashboard'],['sessions','Sessions'],['availability','Availability']].map(([key,label])=>`<button type="button" class="admin-nav-item ${editorTab===key?'selected':''}" data-tab="${key}" role="tab" aria-selected="${editorTab===key}">${label}</button>`).join('')}</div>${editorTab==='availability'?availabilityPanelHTML():editorTab==='dashboard'?calendarPanelHTML():sessionsPanelHTML()}`}${editorMessage?`<p class="editor-message" role="status">${esc(editorMessage)}</p>`:''}</div>`;
 root.querySelector('#editor-login')?.addEventListener('submit',async e=>{e.preventDefault();const key=new FormData(e.target).get('key').trim();try{await api('editor-session',{headers:{Authorization:'Bearer '+key}});editorToken=key;editorMessage='';loadEditorSessions()}catch(e){editorMessage=e.message;editor()}});
 root.querySelector('#toggle-key-visibility')?.addEventListener('click',e=>{const input=root.querySelector('#editor-key-input'),btn=e.currentTarget;const showing=input.type==='text';input.type=showing?'password':'text';btn.textContent=showing?'Show':'Hide';btn.setAttribute('aria-label',showing?'Show access key':'Hide access key')});
-root.querySelector('#sign-out')?.addEventListener('click',()=>{editorToken='';editorSlots=null;editorSessions=null;editorTab='sessions';editorMessage='';editor()});
+root.querySelector('#sign-out')?.addEventListener('click',()=>{editorToken='';editorSlots=null;editorSessions=null;editorTab='sessions';calendarExpandedDate=null;editorMessage='';editor()});
 root.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{editorTab=b.dataset.tab;if((editorTab==='sessions'||editorTab==='dashboard')&&!editorSessions)loadEditorSessions();else editor()});
 root.querySelector('#retry-sessions')?.addEventListener('click',()=>loadEditorSessions());
+root.querySelectorAll('[data-calendar-date]').forEach(b=>b.onclick=()=>{calendarExpandedDate=calendarExpandedDate===b.dataset.calendarDate?null:b.dataset.calendarDate;editor()});
 root.querySelector('#editor-date')?.addEventListener('change',async e=>{editorDate=e.target.value;editorSlots=null;try{const r=await api('editor-availability?date='+editorDate,{headers:{Authorization:'Bearer '+editorToken}});editorSlots=r.slots;editorMessage='';}catch(e){editorMessage=e.message}editor()});root.querySelectorAll('[data-day-action]').forEach(b=>b.onclick=()=>{const action=b.dataset.dayAction;const attr=['show','hide'].includes(action)?'data-visible':'data-active';root.querySelectorAll('['+attr+']').forEach(input=>{if(!input.disabled)input.checked=['show','activate'].includes(action)});});root.querySelector('#editor-save')?.addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const slots=editorSlots.map(s=>({time:s.time,visible:root.querySelector(`[data-visible="${s.time}"]`).checked,active:root.querySelector(`[data-active="${s.time}"]`).checked}));try{await api('editor-availability',{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+editorToken},body:JSON.stringify({date:editorDate,slots})});editorSlots=editorSlots.map(s=>({...s,...slots.find(r=>r.time===s.time)}));editorMessage='Availability saved. Visitors will see the updated schedule.'}catch(e){editorMessage=e.message}editor()});}
-function render(){requestNumber++;const parts=location.hash.slice(1).split('/').filter(Boolean);document.body.classList.toggle('is-landing',!parts.length);document.body.classList.toggle('is-booking',['book','details'].includes(parts[2]));document.body.classList.toggle('is-slot-page',parts[2]==='book');if(!parts.length)landing();else if(parts[0]==='session'&&parts[1])sessionView(parts[1]);else if(parts[0]==='editor'&&parts[1]==='session'&&parts[2])editorSessionView(parts[2]);else if(parts[0]==='editor')editor();else if(parts[0]==='apps'&&parts.length===1)catalog();else{const a=apps.find(a=>a.id===parts[1]);if(a&&parts[0]==='apps'){if(activeApp?.id!==a.id){selectedDate=null;selectedSlot=null;schedule=[];availability=[];receipt=null;}activeApp=a;switch(parts[2]){case undefined:detail(a);break;case 'book':booking(a);if(!schedule.length)loadSchedule(a);break;case 'details':finalDetails(a);break;case 'confirmed':confirmed(a);break;default:location.hash='#/apps';}}else location.hash='#/apps';}window.scrollTo(0,0)}
+function render(){requestNumber++;const parts=location.hash.slice(1).split('/').filter(Boolean);document.body.classList.toggle('is-landing',!parts.length);document.body.classList.toggle('is-booking',['book','details'].includes(parts[2]));document.body.classList.toggle('is-slot-page',parts[2]==='book');if(!parts.length)landing();else if(parts[0]==='progress')progressView();else if(parts[0]==='session'&&parts[1])sessionView(parts[1]);else if(parts[0]==='editor'&&parts[1]==='session'&&parts[2])editorSessionView(parts[2]);else if(parts[0]==='editor')editor();else if(parts[0]==='apps'&&parts.length===1)catalog();else{const a=apps.find(a=>a.id===parts[1]);if(a&&parts[0]==='apps'){if(activeApp?.id!==a.id){selectedDate=null;selectedSlot=null;schedule=[];availability=[];receipt=null;}activeApp=a;switch(parts[2]){case undefined:detail(a);break;case 'book':booking(a);if(!schedule.length)loadSchedule(a);break;case 'details':finalDetails(a);break;case 'confirmed':confirmed(a);break;default:location.hash='#/apps';}}else location.hash='#/apps';}window.scrollTo(0,0)}
 window.addEventListener('hashchange',render);render();
 if(document.modelContext?.registerTool){try{Promise.resolve(document.modelContext.registerTool({name:'start_app_booking',title:'Open app development booking',description:'Open an application’s date and time selection. This does not reserve a slot.',inputSchema:{type:'object',properties:{appId:{type:'string',enum:apps.map(a=>a.id)}},required:['appId'],additionalProperties:false},annotations:{readOnlyHint:false},execute:async({appId})=>{if(!apps.some(a=>a.id===appId))throw new Error('Unknown application');history.replaceState(null,'',`#/apps/${appId}/book`);render();return {appId,stage:'select_date_and_time',booked:false}}})).catch(()=>{});}catch{}}
