@@ -50,6 +50,6 @@ All sessions are in **2026**. The first week uses 28, 29, and 30 September plus 
 
 ## Application trailers
 
-Seven MP4 trailers are stored in dist/trailers and copied to the Vercel public build. The trailers mapping in dist/app.js selects the video for each application; add future files and mapping entries there. Only applications with a supplied video display a Trailer button. Playback opens in a keyboard-accessible dialog and stops when closed or navigating away. Local development supports video range requests for seeking. These binary assets are served by Vercel; the legacy embedded Sites worker does not bundle videos.
+Thirteen MP4 trailers are stored in dist/trailers and copied to the Vercel public build. The trailers mapping in dist/app.js selects the video for each application; add future files and mapping entries there. Only applications with a supplied video display a Trailer button. Playback opens in a keyboard-accessible dialog and stops when closed or navigating away. Local development supports video range requests for seeking. These binary assets are served by Vercel; the legacy embedded Sites worker does not bundle videos.
 
 Payment Followup Agent is the current public name. The internal mr-wasooli ID is retained to preserve existing links and booking records.
