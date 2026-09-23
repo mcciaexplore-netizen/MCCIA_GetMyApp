@@ -47,3 +47,7 @@
 .session-qr img{max-width:100%;height:auto;border-radius:10px;background:#fff;padding:10px;border:1px solid #e5e6ed}
 .session-qr p{font-size:12px;color:#7d8492;margin:10px 0 0;line-height:1.5}
 @media(max-width:560px){.session-qr img{width:180px}}
+
+.password-field{position:relative;display:flex;align-items:center}
+.password-field input{flex:1;padding-right:70px}
+.password-field button{position:absolute;right:6px;background:none;border:0;color:#6647eb;font-size:13px;font-weight:650;cursor:pointer;padding:8px 10px}

@@ -140,6 +140,13 @@ export default {async fetch(request,env){
     }
     return json({error:'Not found'},404);
    }
+   // TEMPORARY diagnostic while chasing a persistent "not configured" report -- reveals only
+   // presence/length, NEVER the actual value, so it's safe to leave reachable without auth while
+   // debugging. Remove once the root cause is confirmed and fixed.
+   if(url.pathname==='/api/editor-diag'&&request.method==='GET'){
+    const raw=env.EDITOR_ACCESS_KEY;
+    return json({present:typeof raw==='string',rawLength:typeof raw==='string'?raw.length:0,trimmedLength:typeof raw==='string'?raw.trim().length:0,rawType:typeof raw});
+   }
    if(url.pathname==='/api/session'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);
     const bookingId=url.searchParams.get('id')||'';
