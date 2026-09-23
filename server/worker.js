@@ -57,6 +57,16 @@ async function upsertSheetRow(env,session){
  if(!res.ok||!data.success)throw new Error(data.error||'Google Sheets sync failed.');
  return true;
 }
+// Sends the visitor a booking confirmation email via the same Apps Script project used for the
+// Sheet sync (no separate email service/credentials needed). Best-effort: callers must catch and
+// log failures here rather than let them affect the booking response -- confirmation email is a
+// convenience, not authoritative data, unlike the Sheet write above.
+async function sendBookingEmail(env,booking){
+ if(!env.GOOGLE_SHEETS_WEBHOOK_URL||!env.GOOGLE_SHEETS_WEBHOOK_SECRET)return;
+ const res=await fetch(env.GOOGLE_SHEETS_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:env.GOOGLE_SHEETS_WEBHOOK_SECRET,action:'SEND_BOOKING_EMAIL',booking})});
+ let data;try{data=await res.json()}catch{throw new Error('Email service returned an unexpected response.')}
+ if(!res.ok||!data.success)throw new Error(data.error||'Confirmation email could not be sent.');
+}
 export default {async fetch(request,env){
  const url=new URL(request.url);
  if(url.pathname.startsWith('/api/')){
@@ -200,6 +210,10 @@ export default {async fetch(request,env){
      // timestamp as the booking) rather than relying on a DB-level default.
      try{await db.prepare('INSERT INTO session_progress (booking_id, created_at, updated_at) SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM session_progress WHERE booking_id = ?)').bind(id,createdAt,createdAt,id).run()}
      catch(spErr){console.error('Failed to create session_progress for booking',id,String(spErr));return json({error:'Booking could not be completed. Please try again.'},503)}
+     // Best-effort booking confirmation email to the visitor. Never blocks or fails the booking --
+     // a visitor's reservation must not depend on an email provider being reachable.
+     try{await sendBookingEmail(env,{to:b.email.trim().toLowerCase(),name:b.name.trim(),appName,date:b.date,slot:b.slot})}
+     catch(emailErr){console.error('Booking confirmation email failed for',id,String(emailErr))}
     }
     catch(e){if(String(e).includes('UNIQUE constraint'))return json({error:"You've already booked this application's session for this date and time."},409);throw e}
     return json({id,appId:b.appId,appName,date:b.date,slot:b.slot},201);

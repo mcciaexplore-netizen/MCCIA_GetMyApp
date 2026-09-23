@@ -1,12 +1,15 @@
 /**
- * GetMyApp master session/progress Google Sheet sync.
+ * GetMyApp master session/progress Google Sheet sync + booking confirmation email.
  *
  * This is a STANDALONE Apps Script project, separate from any other MCCIA Apps Script project
- * (e.g. SyncUp's). It is the server-side counterpart of GetMyApp's `upsertSheetRow()` helper in
- * server/worker.js: GetMyApp's Vercel server calls this Web App to create/update one row per
- * booking in a master Google Sheet, which acts as the authoritative store for session/progress
- * data (attendance, hours, stage, percent, remarks). GetMyApp's own Supabase `session_progress`
- * table is kept as a fast-read mirror, updated only after a call here succeeds.
+ * (e.g. SyncUp's). It is the server-side counterpart of two GetMyApp server/worker.js helpers:
+ *  - `upsertSheetRow()`: creates/updates one row per booking in a master Google Sheet, which acts
+ *    as the authoritative store for session/progress data (attendance, hours, stage, percent,
+ *    remarks). GetMyApp's own Supabase `session_progress` table is kept as a fast-read mirror,
+ *    updated only after a call here succeeds.
+ *  - `sendBookingEmail()`: sends a booking confirmation email to the VISITOR only, right after a
+ *    booking is created. Best-effort -- a failure here is logged server-side and never blocks or
+ *    fails the booking itself.
  *
  * SETUP:
  * 1. Create a new Google Sheet (this will be the master sheet).
@@ -41,6 +44,10 @@ function doPost(e) {
       return jsonResponse({ success: false, error: 'INVALID_SECRET' });
     }
 
+    if (data.action === 'SEND_BOOKING_EMAIL') {
+      return sendBookingEmail(data.booking || {});
+    }
+
     if (data.action !== 'UPSERT_SESSION') {
       return jsonResponse({ success: false, error: 'UNKNOWN_ACTION' });
     }
@@ -55,6 +62,46 @@ function doPost(e) {
   } catch (err) {
     console.error('[session-sheet] doPost failed: ' + err);
     return jsonResponse({ success: false, error: String(err && err.message || err) });
+  }
+}
+
+// Time-slot labels matching GetMyApp's own dist/app.js timeLabels -- kept in sync manually since
+// this runs in a completely separate runtime (Apps Script) with no shared module.
+const TIME_LABELS = { '11:00': '11:00 AM – 12:00 PM', '14:30': '2:30 PM – 3:30 PM', '15:30': '3:30 PM – 4:30 PM' };
+
+/**
+ * Sends a booking confirmation email to the VISITOR ONLY (not the studio) -- best-effort from
+ * GetMyApp's side: a failure here is logged by the caller and never blocks or fails the booking
+ * itself. Sent from whichever Google account this Apps Script project is deployed under
+ * ("Execute as: Me" in the deployment settings).
+ */
+function sendBookingEmail(b) {
+  try {
+    if (!b.to) return jsonResponse({ success: false, error: 'MISSING_RECIPIENT' });
+    const dateLabel = formatDateLabel(b.date);
+    const timeLabel = TIME_LABELS[b.slot] || b.slot || '';
+    const subject = 'Your MCCIA Applied AI Studio session is confirmed — ' + (b.appName || '');
+    const body = 'Hi ' + (b.name || 'there') + ',\n\n' +
+      'Your session at MCCIA Applied AI Studio is reserved:\n\n' +
+      'Application: ' + (b.appName || '') + '\n' +
+      'Date: ' + dateLabel + '\n' +
+      'Time: ' + timeLabel + ' IST\n\n' +
+      'See you at the studio!\n\n' +
+      'MCCIA Applied AI Studio';
+    MailApp.sendEmail({ to: b.to, subject: subject, body: body });
+    return jsonResponse({ success: true });
+  } catch (err) {
+    console.error('[session-sheet] sendBookingEmail failed: ' + err);
+    return jsonResponse({ success: false, error: String(err && err.message || err) });
+  }
+}
+
+function formatDateLabel(dateStr) {
+  try {
+    const d = new Date(dateStr + 'T12:00:00+05:30');
+    return Utilities.formatDate(d, 'Asia/Kolkata', 'EEEE, d MMMM yyyy');
+  } catch (e) {
+    return dateStr || '';
   }
 }
 
@@ -156,4 +203,32 @@ function testUpsertSession() {
   const fakeEvent = { postData: { contents: JSON.stringify(payload) } };
   const response = doPost(fakeEvent);
   console.log('testUpsertSession response: ' + response.getContent());
+}
+
+/**
+ * TEST HARNESS -- run this from the Apps Script editor to verify the confirmation email actually
+ * sends. Edit the `to` address below to your own inbox before running. Check the execution log
+ * and your inbox afterward.
+ */
+function testSendBookingEmail() {
+  const props = PropertiesService.getScriptProperties();
+  const secret = props.getProperty('GETMYAPP_WEBHOOK_SECRET');
+  if (!secret) {
+    console.log('Set the GETMYAPP_WEBHOOK_SECRET script property before running this test.');
+    return;
+  }
+  const payload = {
+    secret: secret,
+    action: 'SEND_BOOKING_EMAIL',
+    booking: {
+      to: 'CHANGE_ME@example.com',
+      name: 'Test Visitor',
+      appName: 'Stocklist',
+      date: '2026-10-01',
+      slot: '14:30'
+    }
+  };
+  const fakeEvent = { postData: { contents: JSON.stringify(payload) } };
+  const response = doPost(fakeEvent);
+  console.log('testSendBookingEmail response: ' + response.getContent());
 }

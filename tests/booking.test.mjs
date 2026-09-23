@@ -92,6 +92,36 @@ test('editor settings and booking revalidation use the new time slots',async()=>
  db.close();
 });
 
+test('a successful booking sends a confirmation email to the visitor via the Sheets webhook',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,...sheetsEnv};
+ const sheets=mockSheetsFetch(true);
+ let res;
+ try{res=await worker.fetch(request('bookings','POST',booking),env)}
+ finally{sheets.restore()}
+ assert.equal(res.status,201);
+ assert.equal(sheets.calls.length,1);
+ const sentBody=JSON.parse(sheets.calls[0].options.body);
+ assert.equal(sentBody.action,'SEND_BOOKING_EMAIL');
+ assert.equal(sentBody.booking.to,booking.email.toLowerCase());
+ assert.equal(sentBody.booking.name,booking.name);
+ assert.equal(sentBody.booking.appName,'Stocklist');
+ assert.equal(sentBody.booking.date,booking.date);
+ assert.equal(sentBody.booking.slot,booking.slot);
+ db.close();
+});
+
+test('a booking still succeeds even if the confirmation email fails to send',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,...sheetsEnv};
+ const sheets=mockSheetsFetch(false,'Simulated mail outage');
+ let res;
+ try{res=await worker.fetch(request('bookings','POST',booking),env)}
+ finally{sheets.restore()}
+ assert.equal(res.status,201);
+ const body=await res.json();
+ assert.ok(body.id);
+ db.close();
+});
+
 test('a successful booking automatically creates a session_progress row with correct defaults',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db);
  const res=await worker.fetch(request('bookings','POST',booking),{DB});
