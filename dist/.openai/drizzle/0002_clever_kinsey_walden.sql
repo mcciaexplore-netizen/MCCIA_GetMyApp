@@ -1,0 +1,1 @@
+ALTER TABLE `bookings` ADD `member_id` text NOT NULL;

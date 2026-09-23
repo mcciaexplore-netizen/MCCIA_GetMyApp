@@ -81,7 +81,7 @@ let availabilityConfirmed=false;
 const timeLabels={'11:00':'11:00 AM – 12:00 PM','14:30':'2:30 PM – 3:30 PM','15:30':'3:30 PM – 4:30 PM'};
 const dateLabel=d=>new Date(d+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:'Asia/Kolkata'});
 let availability=[],schedule=[],loading=false,bookingError='',receipt=null,bookingBusy=false,requestNumber=0,week=0,activeApp=null;
-let contact={name:'',phone:'',email:'',company:''};
+let contact={name:'',phone:'',email:'',company:'',memberId:''};
 const originalDetail=detail;
 detail=function(a){originalDetail(a);root.querySelector('.breadcrumb a').href='#/apps';const hero=root.querySelector('.detail-hero');hero.style.setProperty('--app-bg',a.bg);hero.style.setProperty('--app-ink',a.ink);hero.insertAdjacentHTML('afterbegin','<div class="hero-mesh" aria-hidden="true"></div>');root.querySelector('.detail-copy').insertAdjacentHTML('beforeend','<div class="hero-promise"><span>01 · Explore the app</span><span>02 · Pick your slot</span><span>03 · Let’s build</span></div>');root.querySelector('.detail-meta').textContent='Made for your business. Built with the studio.';};
 
@@ -96,7 +96,7 @@ async function loadDay(a,date){const n=++requestNumber;selectedDate=date;availab
 function finalDetails(a){
  if(!selectedSlot||!selectedDate){location.hash=`#/apps/${a.id}/book`;return}
  document.title='One last step | MCCIA AI Studio';
- root.innerHTML=`<div class="final-shell"><div class="finish-header"><div class="finish-check">✓</div><div class="eyebrow">THE BIG DECISIONS ARE DONE</div><h1>One last step.<br><span>Then you’re ready.</span></h1><p>Add your details to reserve your session and create your downloadable session card.</p></div><div class="final-card">${slotSummary(a)}<a class="change-slot" href="#/apps/${a.id}/book">Change slot</a><form id="booking-form"><div class="form-grid"><label>Full name<input required minlength="2" maxlength="100" name="name" autocomplete="name" value="${esc(contact.name)}" placeholder="Your full name" ${bookingBusy?'disabled':''}></label><label>Phone number<input required type="tel" inputmode="tel" name="phone" autocomplete="tel" maxlength="25" value="${esc(contact.phone||'')}" placeholder="+91 98765 43210" ${bookingBusy?'disabled':''}></label><label class="full-width">Email address<input required type="email" maxlength="254" name="email" autocomplete="email" value="${esc(contact.email)}" placeholder="you@company.com" ${bookingBusy?'disabled':''}></label><label class="full-width">Company <span>(optional)</span><input maxlength="150" name="company" autocomplete="organization" value="${esc(contact.company)}" placeholder="Your company" ${bookingBusy?'disabled':''}></label></div>${bookingError?`<p class="error" role="alert">${esc(bookingError)}</p>`:''}<button class="primary" ${bookingBusy?'disabled':''}>${bookingBusy?'Reserving your session…':'Reserve my session'} <span>↗</span></button><p class="form-note">Submits your booking to the studio and creates your downloadable session card.</p></form></div></div>`;
+ root.innerHTML=`<div class="final-shell"><div class="finish-header"><div class="finish-check">✓</div><div class="eyebrow">THE BIG DECISIONS ARE DONE</div><h1>One last step.<br><span>Then you’re ready.</span></h1><p>Add your details to reserve your session and create your downloadable session card.</p></div><div class="final-card">${slotSummary(a)}<a class="change-slot" href="#/apps/${a.id}/book">Change slot</a><form id="booking-form"><div class="form-grid"><label>Full name<input required minlength="2" maxlength="100" name="name" autocomplete="name" value="${esc(contact.name)}" placeholder="Your full name" ${bookingBusy?'disabled':''}></label><label>Phone number<input required type="tel" inputmode="tel" name="phone" autocomplete="tel" maxlength="25" value="${esc(contact.phone||'')}" placeholder="+91 98765 43210" ${bookingBusy?'disabled':''}></label><label class="full-width">Email address<input required type="email" maxlength="254" name="email" autocomplete="email" value="${esc(contact.email)}" placeholder="you@company.com" ${bookingBusy?'disabled':''}></label><label>Member ID<input required maxlength="50" name="memberId" autocomplete="off" value="${esc(contact.memberId||'')}" placeholder="Your MCCIA member ID" ${bookingBusy?'disabled':''}></label><label class="full-width">Company <span>(optional)</span><input maxlength="150" name="company" autocomplete="organization" value="${esc(contact.company)}" placeholder="Your company" ${bookingBusy?'disabled':''}></label></div>${bookingError?`<p class="error" role="alert">${esc(bookingError)}</p>`:''}<button class="primary" ${bookingBusy?'disabled':''}>${bookingBusy?'Reserving your session…':'Reserve my session'} <span>↗</span></button><p class="form-note">Submits your booking to the studio and creates your downloadable session card.</p></form></div></div>`;
  const form=root.querySelector('#booking-form');
  root.querySelectorAll('input').forEach(input=>input.oninput=()=>{contact[input.name]=input.value;input.setCustomValidity('')});
  form.onsubmit=async e=>{
@@ -104,16 +104,17 @@ function finalDetails(a){
   const phone=form.elements.phone;const digits=phone.value.replace(/\D/g,'');
   if(digits.length<7||digits.length>15||!/^\+?[\d\s().-]+$/.test(phone.value)){phone.setCustomValidity('Enter a valid phone number with 7–15 digits.');phone.reportValidity();return}
   if(!contact.name.trim()){form.elements.name.setCustomValidity('Enter your full name.');form.elements.name.reportValidity();return}
+  if(!contact.memberId||!contact.memberId.trim()){form.elements.memberId.setCustomValidity('Enter your member ID.');form.elements.memberId.reportValidity();return}
   bookingBusy=true;bookingError='';finalDetails(a);
   try{
-   const saved=await api('bookings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:a.id,date:selectedDate,slot:selectedSlot,name:contact.name.trim(),phone:contact.phone.trim(),email:contact.email.trim(),company:contact.company.trim()})});
-   receipt={id:saved.id,appId:saved.appId,appName:saved.appName,date:saved.date,slot:saved.slot,name:contact.name.trim(),phone:contact.phone.trim(),email:contact.email.trim(),company:contact.company.trim()};
+   const saved=await api('bookings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:a.id,date:selectedDate,slot:selectedSlot,name:contact.name.trim(),phone:contact.phone.trim(),email:contact.email.trim(),company:contact.company.trim(),memberId:contact.memberId.trim()})});
+   receipt={id:saved.id,appId:saved.appId,appName:saved.appName,date:saved.date,slot:saved.slot,name:contact.name.trim(),phone:contact.phone.trim(),email:contact.email.trim(),company:contact.company.trim(),memberId:contact.memberId.trim()};
    bookingBusy=false;
    location.hash=`#/apps/${a.id}/confirmed`;
   }catch(err){bookingBusy=false;bookingError=err.message;finalDetails(a)}
  };
 }
-function cardFields(r){return [['Full name',r.name],['Phone number',r.phone],['Email address',r.email],...(r.company?[['Company',r.company]]:[]),['Application',r.appName],['Date',new Date(r.date+'T12:00Z').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Kolkata'})],['Time',timeLabels[r.slot]+' IST']];}
+function cardFields(r){return [['Full name',r.name],['Phone number',r.phone],['Email address',r.email],['Member ID',r.memberId],...(r.company?[['Company',r.company]]:[]),['Application',r.appName],['Date',new Date(r.date+'T12:00Z').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Kolkata'})],['Time',timeLabels[r.slot]+' IST']];}
 // window.location.origin so this works unchanged in local dev, Vercel previews and production --
 // never a hard-coded domain. The QR encodes only this public URL, nothing else.
 function sessionUrl(bookingId){return `${location.origin}/#/session/${bookingId}`}
@@ -202,7 +203,7 @@ function renderSessionView(bookingId){
   :sessionLoading?`<p role="status">Loading session…</p>`
   :sessionError?`<p class="error" role="alert">${esc(sessionError)}</p>`
   :!sessionData?''
-  :editMode?`<div class="editor-board"><dl class="session-summary-grid"><div><dt>Participant</dt><dd>${esc(sessionData.name)}</dd></div><div><dt>Application</dt><dd>${esc(sessionData.appName)}</dd></div><div><dt>Date</dt><dd>${dateLabel(sessionData.date)}</dd></div><div><dt>Time</dt><dd>${timeLabels[sessionData.slot]||esc(sessionData.slot)}</dd></div><div><dt>Company</dt><dd>${esc(sessionData.company||'—')}</dd></div></dl>
+  :editMode?`<div class="editor-board"><dl class="session-summary-grid"><div><dt>Participant</dt><dd>${esc(sessionData.name)}</dd></div><div><dt>Application</dt><dd>${esc(sessionData.appName)}</dd></div><div><dt>Date</dt><dd>${dateLabel(sessionData.date)}</dd></div><div><dt>Time</dt><dd>${timeLabels[sessionData.slot]||esc(sessionData.slot)}</dd></div><div><dt>Phone</dt><dd>${esc(sessionData.phone||'—')}</dd></div><div><dt>Email</dt><dd>${esc(sessionData.email||'—')}</dd></div><div><dt>Member ID</dt><dd>${esc(sessionData.memberId||'—')}</dd></div><div><dt>Company</dt><dd>${esc(sessionData.company||'—')}</dd></div></dl>
     ${progressEditFormHTML(sessionEditForm,sessionSaveBusy,sessionSaveError)}
     ${sessionSaveMessage?`<p class="editor-message" role="status">${esc(sessionSaveMessage)}</p>`:''}
     <button type="button" class="text-button" id="session-staff-signout" style="margin-top:14px">Sign out of staff mode</button>
@@ -314,7 +315,7 @@ function renderEditorSessionView(bookingId){
   editorSessionDetailLoading?'<p role="status">Loading session…</p>'
   :editorSessionDetailError?`<p class="error" role="alert">${esc(editorSessionDetailError)}</p>`
   :!s?'<p class="error" role="alert">Session not found.</p>'
-  :`<div class="editor-board"><dl class="session-summary-grid"><div><dt>Participant</dt><dd>${esc(s.name)}</dd></div><div><dt>Application</dt><dd>${esc(s.appName)}</dd></div><div><dt>Date</dt><dd>${dateLabel(s.date)}</dd></div><div><dt>Time</dt><dd>${timeLabels[s.slot]||esc(s.slot)}</dd></div><div><dt>Company</dt><dd>${esc(s.company||'—')}</dd></div><div><dt>Booking ID</dt><dd>${esc(s.id)}</dd></div></dl>
+  :`<div class="editor-board"><dl class="session-summary-grid"><div><dt>Participant</dt><dd>${esc(s.name)}</dd></div><div><dt>Application</dt><dd>${esc(s.appName)}</dd></div><div><dt>Date</dt><dd>${dateLabel(s.date)}</dd></div><div><dt>Time</dt><dd>${timeLabels[s.slot]||esc(s.slot)}</dd></div><div><dt>Phone</dt><dd>${esc(s.phone||'—')}</dd></div><div><dt>Email</dt><dd>${esc(s.email||'—')}</dd></div><div><dt>Member ID</dt><dd>${esc(s.memberId||'—')}</dd></div><div><dt>Company</dt><dd>${esc(s.company||'—')}</dd></div><div><dt>Booking ID</dt><dd>${esc(s.id)}</dd></div></dl>
     ${progressEditFormHTML(editorSessionForm,editorSessionSaveBusy,editorSessionSaveError)}
     ${editorSessionSaveMessage?`<p class="editor-message" role="status">${esc(editorSessionSaveMessage)}</p>`:''}
     <div class="editor-subsection">
@@ -397,6 +398,9 @@ function calendarModalHTML(){
   <h2>${esc(s.name)}</h2>
   <dl class="session-summary-grid">
    <div><dt>Application</dt><dd>${esc(s.appName)}</dd></div>
+   <div><dt>Phone</dt><dd>${esc(s.phone||'—')}</dd></div>
+   <div><dt>Email</dt><dd>${esc(s.email||'—')}</dd></div>
+   <div><dt>Member ID</dt><dd>${esc(s.memberId||'—')}</dd></div>
    <div><dt>Company</dt><dd>${esc(s.company||'—')}</dd></div>
    <div><dt>Attendance</dt><dd><span class="status-pill" style="${attendanceStyles[s.attendance]||''}">${esc(s.attendance)}</span></dd></div>
    <div><dt>Stage</dt><dd><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span></dd></div>

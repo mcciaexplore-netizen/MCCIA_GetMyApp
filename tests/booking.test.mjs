@@ -7,11 +7,11 @@ import worker,{validateBooking,isValidDate} from '../server/worker.js';
 import {supabaseDatabase} from '../server/supabase.js';
 
 const now=new Date('2026-09-17T04:00:00Z');
-const booking={appId:'stocklist',date:'2026-10-01',slot:'14:30',name:'Test User',phone:'+91 98765 43210',email:'test@example.com',company:'Test'};
+const booking={appId:'stocklist',date:'2026-10-01',slot:'14:30',name:'Test User',phone:'+91 98765 43210',email:'test@example.com',company:'Test',memberId:'MCCIA-1001'};
 const request=(path,method='GET',body,auth)=>new Request('https://studio.test/api/'+path,{method,headers:{Origin:'https://studio.test','Content-Type':'application/json',...(auth?{Authorization:'Bearer '+auth}:{})},...(body?{body:JSON.stringify(body)}:{})});
-function testDatabase(){const db=new DatabaseSync(':memory:');db.exec(fs.readFileSync('drizzle/0000_soft_ulik.sql','utf8'));db.exec(fs.readFileSync('drizzle/0001_sour_blonde_phantom.sql','utf8'));return db}
+function testDatabase(){const db=new DatabaseSync(':memory:');db.exec(fs.readFileSync('drizzle/0000_soft_ulik.sql','utf8'));db.exec(fs.readFileSync('drizzle/0001_sour_blonde_phantom.sql','utf8'));db.exec(fs.readFileSync('drizzle/0002_clever_kinsey_walden.sql','utf8'));return db}
 function databaseAdapter(db){return {async batch(statements){db.exec('BEGIN');try{for(const s of statements)await s.run();db.exec('COMMIT')}catch(e){db.exec('ROLLBACK');throw e}},prepare(sql){return{bind(...v){return{async all(){return{results:db.prepare(sql).all(...v)}},async run(){return db.prepare(sql).run(...v)}}}}}}}
-const bookingInsertSql='INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))';
+const bookingInsertSql='INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, member_id, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))';
 const editorKey='test-editor-key-with-at-least-32-characters';
 const sheetsEnv={GOOGLE_SHEETS_WEBHOOK_URL:'https://script.google.com/macros/test/exec',GOOGLE_SHEETS_WEBHOOK_SECRET:'test-sheets-secret-at-least-32-characters'};
 function mockSheetsFetch(shouldSucceed,errorMessage){
@@ -58,11 +58,11 @@ test('the duplicate guard is scoped per application, not globally by date/slot',
  const db=testDatabase(),now2=new Date().toISOString();
  // Bypass per-app schedule validation to exercise the DB constraint directly: the same person
  // booking two different applications for the identical date+slot must not collide.
- const first=db.prepare(bookingInsertSql).run('id-1','app-a','App A','2026-10-01','14:30','Test User','+91 98765 43210','same-person@example.com','',now2,'2026-10-01','14:30');
+ const first=db.prepare(bookingInsertSql).run('id-1','app-a','App A','2026-10-01','14:30','Test User','+91 98765 43210','same-person@example.com','','MEM',now2,'2026-10-01','14:30');
  assert.equal(first.changes,1);
- const second=db.prepare(bookingInsertSql).run('id-2','app-b','App B','2026-10-01','14:30','Test User','+91 98765 43210','same-person@example.com','',now2,'2026-10-01','14:30');
+ const second=db.prepare(bookingInsertSql).run('id-2','app-b','App B','2026-10-01','14:30','Test User','+91 98765 43210','same-person@example.com','','MEM',now2,'2026-10-01','14:30');
  assert.equal(second.changes,1);
- assert.throws(()=>db.prepare(bookingInsertSql).run('id-3','app-a','App A','2026-10-01','14:30','Test User','+91 98765 43210','same-person@example.com','',now2,'2026-10-01','14:30'),/UNIQUE constraint/);
+ assert.throws(()=>db.prepare(bookingInsertSql).run('id-3','app-a','App A','2026-10-01','14:30','Test User','+91 98765 43210','same-person@example.com','','MEM',now2,'2026-10-01','14:30'),/UNIQUE constraint/);
  db.close();
 });
 
@@ -140,7 +140,7 @@ test('a successful booking automatically creates a session_progress row with cor
 
 test('one booking cannot have two session_progress records',async()=>{
  const db=testDatabase(),now2=new Date().toISOString();
- db.prepare(bookingInsertSql).run('id-sp-1','stocklist','Stocklist','2026-10-01','14:30','Test User','+91 98765 43210','one@example.com','',now2,'2026-10-01','14:30');
+ db.prepare(bookingInsertSql).run('id-sp-1','stocklist','Stocklist','2026-10-01','14:30','Test User','+91 98765 43210','one@example.com','','MEM',now2,'2026-10-01','14:30');
  db.prepare('INSERT INTO session_progress (booking_id) VALUES (?)').run('id-sp-1');
  assert.throws(()=>db.prepare('INSERT INTO session_progress (booking_id) VALUES (?)').run('id-sp-1'),/UNIQUE constraint/);
  db.close();
@@ -309,6 +309,17 @@ test('admin sessions list requires auth and returns booking + progress fields me
  assert.equal(row.progressPercent,0);
  // Admin-only fields are present here (unlike the public GET /api/session response).
  assert.ok('remarks' in row);
+ assert.equal(row.phone,booking.phone);
+ assert.equal(row.email,booking.email);
+ assert.equal(row.memberId,booking.memberId);
+ db.close();
+});
+
+test('a booking without a member ID is rejected',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db);
+ const res=await worker.fetch(request('bookings','POST',{...booking,memberId:''}),{DB});
+ assert.equal(res.status,400);
+ assert.match((await res.json()).error,/member id/i);
  db.close();
 });
 

@@ -26,7 +26,7 @@
 
 const SHEET_NAME = 'Sessions';
 const HEADERS = [
-  'Booking ID', 'Date', 'Time', 'Application', 'Participant', 'Company',
+  'Booking ID', 'Date', 'Time', 'Application', 'Participant', 'Company', 'Member ID',
   'Attendance', 'Hours Completed', 'Progress Stage', 'Progress %', 'Remarks',
   'Created At', 'Updated At'
 ];
@@ -135,6 +135,7 @@ function upsertSessionRow(s) {
       s.appName || '',
       s.name || '',
       s.company || '',
+      s.memberId || '',
       s.attendance || 'Not Marked',
       (s.hoursCompleted !== undefined && s.hoursCompleted !== null) ? s.hoursCompleted : 0,
       s.progressStage || 'Not Started',
@@ -223,6 +224,7 @@ function testUpsertSession() {
       appName: 'Stocklist',
       name: 'Test Participant',
       company: 'Test Co',
+      memberId: 'MCCIA-TEST-001',
       attendance: 'Present',
       hoursCompleted: 0.75,
       progressStage: 'In Progress',

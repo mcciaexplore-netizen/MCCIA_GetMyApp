@@ -12,18 +12,18 @@ export function supabaseDatabase(env) {
    else if(sql==='SELECT date, slot, visible, active FROM availability WHERE date >= ? AND date <= ?')path='availability?select=date,slot,visible,active&date=gte.'+encodeURIComponent(v[0])+'&date=lte.'+encodeURIComponent(v[1]);
    else if(sql==='SELECT id, app_name, name, date, slot FROM bookings WHERE id = ?')path='bookings?select=id,app_name,name,date,slot&id=eq.'+encodeURIComponent(v[0]);
    else if(sql==='SELECT progress_stage, progress_percent FROM session_progress WHERE booking_id = ?')path='session_progress?select=progress_stage,progress_percent&booking_id=eq.'+encodeURIComponent(v[0]);
-   else if(sql==='SELECT id, app_id, app_name, name, company, date, slot FROM bookings ORDER BY date, slot')path='bookings?select=id,app_id,app_name,name,company,date,slot&order=date.asc,slot.asc';
+   else if(sql==='SELECT id, app_id, app_name, name, phone, email, company, member_id, date, slot FROM bookings ORDER BY date, slot')path='bookings?select=id,app_id,app_name,name,phone,email,company,member_id,date,slot&order=date.asc,slot.asc';
    else if(sql==='SELECT id, app_name, company FROM bookings')path='bookings?select=id,app_name,company';
    else if(sql==='SELECT booking_id, attendance, hours_completed, progress_stage, progress_percent, remarks FROM session_progress')path='session_progress?select=booking_id,attendance,hours_completed,progress_stage,progress_percent,remarks';
-   else if(sql==='SELECT app_name, name, company, date, slot FROM bookings WHERE id = ?')path='bookings?select=app_name,name,company,date,slot&id=eq.'+encodeURIComponent(v[0]);
+   else if(sql==='SELECT app_name, name, company, member_id, date, slot FROM bookings WHERE id = ?')path='bookings?select=app_name,name,company,member_id,date,slot&id=eq.'+encodeURIComponent(v[0]);
    else if(sql==='SELECT created_at FROM session_progress WHERE booking_id = ?')path='session_progress?select=created_at&booking_id=eq.'+encodeURIComponent(v[0]);
-   else if(sql==='SELECT app_id, app_name, name, company, email, date, slot FROM bookings WHERE id = ?')path='bookings?select=app_id,app_name,name,company,email,date,slot&id=eq.'+encodeURIComponent(v[0]);
+   else if(sql==='SELECT app_id, app_name, name, company, email, member_id, date, slot FROM bookings WHERE id = ?')path='bookings?select=app_id,app_name,name,company,email,member_id,date,slot&id=eq.'+encodeURIComponent(v[0]);
    else if(sql==='SELECT attendance, hours_completed, progress_stage, progress_percent, remarks, created_at FROM session_progress WHERE booking_id = ?')path='session_progress?select=attendance,hours_completed,progress_stage,progress_percent,remarks,created_at&booking_id=eq.'+encodeURIComponent(v[0]);
    else throw Error('Unsupported query');
    return {results:await call(path)}
   },async run(){
    if(sql.startsWith('INSERT INTO bookings')){
-    const saved=await call('rpc/book_session',{method:'POST',body:JSON.stringify({p_id:v[0],p_app:v[1],p_app_name:v[2],p_date:v[3],p_slot:v[4],p_name:v[5],p_phone:v[6],p_email:v[7],p_company:v[8]})});
+    const saved=await call('rpc/book_session',{method:'POST',body:JSON.stringify({p_id:v[0],p_app:v[1],p_app_name:v[2],p_date:v[3],p_slot:v[4],p_name:v[5],p_phone:v[6],p_email:v[7],p_company:v[8],p_member_id:v[9]})});
     return {meta:{changes:saved?1:0}};
    }
    if(sql==='INSERT INTO session_progress (booking_id, created_at, updated_at) SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM session_progress WHERE booking_id = ?)'){

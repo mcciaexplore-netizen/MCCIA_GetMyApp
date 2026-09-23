@@ -10,6 +10,7 @@ export const bookings = sqliteTable('bookings', {
   phone: text('phone').notNull(),
   email: text('email').notNull(),
   company: text('company').notNull(),
+  memberId: text('member_id').notNull(),
   createdAt: text('created_at').notNull(),
 }, table => [uniqueIndex('idx_bookings_app_date_slot_email').on(table.appId, table.date, table.slot, table.email)]);
 

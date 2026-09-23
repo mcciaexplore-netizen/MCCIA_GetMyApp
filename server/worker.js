@@ -43,6 +43,7 @@ export function validateBooking(b,now=new Date()){
  if(typeof b.phone!=='string'||phoneDigits.length<7||phoneDigits.length>15||!/^\+?[\d\s().-]+$/.test(b.phone))return 'Enter a valid phone number with 7–15 digits.';
  if(typeof b.email!=='string'||b.email.length>254||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email))return 'Enter a valid email address.';
  if(typeof b.company!=='string'||b.company.length>150)return 'Company must be 150 characters or fewer.';
+ if(typeof b.memberId!=='string'||!b.memberId.trim()||b.memberId.trim().length>50)return 'Enter your member ID (1–50 characters).';
  return null;
 }
 function database(env){if(!env.DB)throw new Error('Booking database unavailable');return env.DB;}
@@ -106,10 +107,10 @@ export default {async fetch(request,env){
      // Admin-only list combining bookings with their session_progress row. Two queries + a
      // JS-side merge, matching the same pattern already used for the public GET /api/session
      // and for the availability GET above, rather than introducing join support into the DB layer.
-     const bookingRows=(await db.prepare('SELECT id, app_id, app_name, name, company, date, slot FROM bookings ORDER BY date, slot').bind().all()).results;
+     const bookingRows=(await db.prepare('SELECT id, app_id, app_name, name, phone, email, company, member_id, date, slot FROM bookings ORDER BY date, slot').bind().all()).results;
      const progressRows=(await db.prepare('SELECT booking_id, attendance, hours_completed, progress_stage, progress_percent, remarks FROM session_progress').bind().all()).results;
      const progressByBooking=new Map(progressRows.map(p=>[p.booking_id,p]));
-     return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {id:b.id,appId:b.app_id,name:b.name,appName:b.app_name,company:b.company,date:b.date,slot:b.slot,attendance:p.attendance||'Not Marked',hoursCompleted:p.hours_completed??0,progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0,remarks:p.remarks||''}})});
+     return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {id:b.id,appId:b.app_id,name:b.name,phone:b.phone,email:b.email,appName:b.app_name,company:b.company,memberId:b.member_id,date:b.date,slot:b.slot,attendance:p.attendance||'Not Marked',hoursCompleted:p.hours_completed??0,progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0,remarks:p.remarks||''}})});
     }
     if(url.pathname==='/api/editor-availability'&&request.method==='GET') {
      const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled application dates.'},400);
@@ -136,7 +137,7 @@ export default {async fetch(request,env){
      if(typeof b.progressStage!=='string'||!progressStages.includes(b.progressStage))return json({error:'Invalid progress stage.'},400);
      if(!Number.isInteger(b.progressPercent)||b.progressPercent<0||b.progressPercent>100)return json({error:'Progress percent must be a whole number between 0 and 100.'},400);
      if(typeof b.remarks!=='string'||b.remarks.length>2000)return json({error:'Remarks must be 2000 characters or fewer.'},400);
-     const bookingRows=(await db.prepare('SELECT app_name, name, company, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
+     const bookingRows=(await db.prepare('SELECT app_name, name, company, member_id, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
      if(!bookingRows.length)return json({error:'Booking not found.'},404);
      const existingRows=(await db.prepare('SELECT created_at FROM session_progress WHERE booking_id = ?').bind(bookingId).all()).results;
      if(!existingRows.length)return json({error:'Session not found.'},404);
@@ -144,7 +145,7 @@ export default {async fetch(request,env){
      // Google Sheets is the authoritative progress store: the save must reach it successfully
      // before we touch Supabase or report success to the client. Never show "saved" if this fails.
      try{
-      await upsertSheetRow(env,{bookingId,date:bookingRow.date,slot:bookingRow.slot,appName:bookingRow.app_name,name:bookingRow.name,company:bookingRow.company,attendance:b.attendance,hoursCompleted:b.hoursCompleted,progressStage:b.progressStage,progressPercent:b.progressPercent,remarks,createdAt:existingRows[0].created_at,updatedAt});
+      await upsertSheetRow(env,{bookingId,date:bookingRow.date,slot:bookingRow.slot,appName:bookingRow.app_name,name:bookingRow.name,company:bookingRow.company,memberId:bookingRow.member_id,attendance:b.attendance,hoursCompleted:b.hoursCompleted,progressStage:b.progressStage,progressPercent:b.progressPercent,remarks,createdAt:existingRows[0].created_at,updatedAt});
      }catch(sheetErr){
       console.error('Google Sheets sync failed for booking',bookingId,String(sheetErr));
       return json({error:'Progress could not be saved. Please try again.'},502);
@@ -180,7 +181,7 @@ export default {async fetch(request,env){
      if(!request.headers.get('Content-Type')?.includes('application/json'))return json({error:'JSON required.'},415);
      const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);
      let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
-     const bookingRows=(await db.prepare('SELECT app_id, app_name, name, company, email, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
+     const bookingRows=(await db.prepare('SELECT app_id, app_name, name, company, email, member_id, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
      if(!bookingRows.length)return json({error:'Booking not found.'},404);
      const booking=bookingRows[0];
      // Reschedule targets must still be one of the app's own scheduled date/time combinations --
@@ -196,7 +197,7 @@ export default {async fetch(request,env){
      const progress=progressRows[0],updatedAt=new Date().toISOString();
      // Best-effort Sheet sync -- the reschedule itself is already committed in bookings above;
      // a Sheet-sync failure here is logged, not treated as a failed reschedule.
-     try{await upsertSheetRow(env,{bookingId,date:b.date,slot:b.slot,appName:booking.app_name,name:booking.name,company:booking.company,attendance:progress.attendance,hoursCompleted:progress.hours_completed,progressStage:progress.progress_stage,progressPercent:progress.progress_percent,remarks:progress.remarks,createdAt:progress.created_at,updatedAt})}
+     try{await upsertSheetRow(env,{bookingId,date:b.date,slot:b.slot,appName:booking.app_name,name:booking.name,company:booking.company,memberId:booking.member_id,attendance:progress.attendance,hoursCompleted:progress.hours_completed,progressStage:progress.progress_stage,progressPercent:progress.progress_percent,remarks:progress.remarks,createdAt:progress.created_at,updatedAt})}
      catch(sheetErr){console.error('Google Sheets sync failed after reschedule for booking',bookingId,String(sheetErr))}
      let emailSent=true;
      try{await sendBookingEmail(env,{to:booking.email,name:booking.name,appName:booking.app_name,date:b.date,slot:b.slot,type:'reschedule'})}
@@ -252,7 +253,7 @@ export default {async fetch(request,env){
     // The unique index on (app_id, date, slot, email) only guards against the SAME person
     // accidentally double-submitting; it is not a capacity check.
     try{
-     const saved=await db.prepare('INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))').bind(id,b.appId,appName,b.date,b.slot,b.name.trim(),b.phone.trim(),b.email.trim().toLowerCase(),b.company.trim(),createdAt,b.date,b.slot).run();
+     const saved=await db.prepare('INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, member_id, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))').bind(id,b.appId,appName,b.date,b.slot,b.name.trim(),b.phone.trim(),b.email.trim().toLowerCase(),b.company.trim(),b.memberId.trim(),createdAt,b.date,b.slot).run();
      if((saved.meta?.changes??saved.changes)===0)return json({error:'This slot is no longer available. Please choose another time.'},409);
      // Every booking must have exactly one session_progress row. In production this is created
      // atomically inside book_session() itself (see supabase/schema.sql) -- if that insert fails,
