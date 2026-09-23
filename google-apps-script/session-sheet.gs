@@ -48,6 +48,14 @@ function doPost(e) {
       return sendBookingEmail(data.booking || {});
     }
 
+    if (data.action === 'DELETE_SESSION') {
+      if (!data.bookingId) {
+        return jsonResponse({ success: false, error: 'MISSING_BOOKING_ID' });
+      }
+      deleteSessionRow(data.bookingId);
+      return jsonResponse({ success: true });
+    }
+
     if (data.action !== 'UPSERT_SESSION') {
       return jsonResponse({ success: false, error: 'UNKNOWN_ACTION' });
     }
@@ -70,19 +78,25 @@ function doPost(e) {
 const TIME_LABELS = { '11:00': '11:00 AM – 12:00 PM', '14:30': '2:30 PM – 3:30 PM', '15:30': '3:30 PM – 4:30 PM' };
 
 /**
- * Sends a booking confirmation email to the VISITOR ONLY (not the studio) -- best-effort from
- * GetMyApp's side: a failure here is logged by the caller and never blocks or fails the booking
- * itself. Sent from whichever Google account this Apps Script project is deployed under
- * ("Execute as: Me" in the deployment settings).
+ * Sends a booking confirmation (default) or reschedule notice (b.type === 'reschedule') email to
+ * the VISITOR ONLY (not the studio) -- best-effort from GetMyApp's side: a failure here is logged
+ * by the caller and never blocks or fails the booking/reschedule itself. Sent from whichever
+ * Google account this Apps Script project is deployed under ("Execute as: Me" in the deployment
+ * settings).
  */
 function sendBookingEmail(b) {
   try {
     if (!b.to) return jsonResponse({ success: false, error: 'MISSING_RECIPIENT' });
     const dateLabel = formatDateLabel(b.date);
     const timeLabel = TIME_LABELS[b.slot] || b.slot || '';
-    const subject = 'Your MCCIA Applied AI Studio session is confirmed — ' + (b.appName || '');
+    const isReschedule = b.type === 'reschedule';
+    const subject = isReschedule
+      ? 'Your MCCIA Applied AI Studio session has a new date/time — ' + (b.appName || '')
+      : 'Your MCCIA Applied AI Studio session is confirmed — ' + (b.appName || '');
     const body = 'Hi ' + (b.name || 'there') + ',\n\n' +
-      'Your session at MCCIA Applied AI Studio is reserved:\n\n' +
+      (isReschedule
+        ? 'Your session at MCCIA Applied AI Studio has been rescheduled. The new details are:\n\n'
+        : 'Your session at MCCIA Applied AI Studio is reserved:\n\n') +
       'Application: ' + (b.appName || '') + '\n' +
       'Date: ' + dateLabel + '\n' +
       'Time: ' + timeLabel + ' IST\n\n' +
@@ -135,6 +149,24 @@ function upsertSessionRow(s) {
       sheet.appendRow(row);
     } else {
       sheet.getRange(targetRow, 1, 1, row.length).setValues([row]);
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Removes a booking's row from the sheet entirely (called when an admin deletes the booking from
+ * GetMyApp). Locked for the same reason as upsertSessionRow. A no-op if the row is already gone.
+ */
+function deleteSessionRow(bookingId) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getOrCreateSheet();
+    const targetRow = findRowByBookingId(sheet, bookingId);
+    if (targetRow !== -1) {
+      sheet.deleteRow(targetRow);
     }
   } finally {
     lock.releaseLock();

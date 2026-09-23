@@ -57,15 +57,26 @@ async function upsertSheetRow(env,session){
  if(!res.ok||!data.success)throw new Error(data.error||'Google Sheets sync failed.');
  return true;
 }
-// Sends the visitor a booking confirmation email via the same Apps Script project used for the
-// Sheet sync (no separate email service/credentials needed). Best-effort: callers must catch and
-// log failures here rather than let them affect the booking response -- confirmation email is a
-// convenience, not authoritative data, unlike the Sheet write above.
+// Sends the visitor a booking confirmation (or reschedule notice, when booking.type==='reschedule')
+// email via the same Apps Script project used for the Sheet sync (no separate email service/
+// credentials needed). Best-effort: callers must catch and log failures here rather than let them
+// affect the booking response -- confirmation email is a convenience, not authoritative data,
+// unlike the Sheet write above.
 async function sendBookingEmail(env,booking){
  if(!env.GOOGLE_SHEETS_WEBHOOK_URL||!env.GOOGLE_SHEETS_WEBHOOK_SECRET)return;
  const res=await fetch(env.GOOGLE_SHEETS_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:env.GOOGLE_SHEETS_WEBHOOK_SECRET,action:'SEND_BOOKING_EMAIL',booking})});
  let data;try{data=await res.json()}catch{throw new Error('Email service returned an unexpected response.')}
  if(!res.ok||!data.success)throw new Error(data.error||'Confirmation email could not be sent.');
+}
+// Removes a booking's row from the master Google Sheet after an admin deletes it. Best-effort --
+// the booking is already gone from the database regardless of whether this succeeds, and callers
+// only log a failure here. Deliberately separate from sendBookingEmail: deleting a booking must
+// never email the visitor.
+async function deleteSheetRow(env,bookingId){
+ if(!env.GOOGLE_SHEETS_WEBHOOK_URL||!env.GOOGLE_SHEETS_WEBHOOK_SECRET)return;
+ const res=await fetch(env.GOOGLE_SHEETS_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:env.GOOGLE_SHEETS_WEBHOOK_SECRET,action:'DELETE_SESSION',bookingId})});
+ let data;try{data=await res.json()}catch{throw new Error('Google Sheets sync returned an unexpected response.')}
+ if(!res.ok||!data.success)throw new Error(data.error||'Google Sheets row delete failed.');
 }
 export default {async fetch(request,env){
  const url=new URL(request.url);
@@ -95,10 +106,10 @@ export default {async fetch(request,env){
      // Admin-only list combining bookings with their session_progress row. Two queries + a
      // JS-side merge, matching the same pattern already used for the public GET /api/session
      // and for the availability GET above, rather than introducing join support into the DB layer.
-     const bookingRows=(await db.prepare('SELECT id, app_name, name, company, date, slot FROM bookings ORDER BY date, slot').bind().all()).results;
+     const bookingRows=(await db.prepare('SELECT id, app_id, app_name, name, company, date, slot FROM bookings ORDER BY date, slot').bind().all()).results;
      const progressRows=(await db.prepare('SELECT booking_id, attendance, hours_completed, progress_stage, progress_percent, remarks FROM session_progress').bind().all()).results;
      const progressByBooking=new Map(progressRows.map(p=>[p.booking_id,p]));
-     return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {id:b.id,name:b.name,appName:b.app_name,company:b.company,date:b.date,slot:b.slot,attendance:p.attendance||'Not Marked',hoursCompleted:p.hours_completed??0,progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0,remarks:p.remarks||''}})});
+     return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {id:b.id,appId:b.app_id,name:b.name,appName:b.app_name,company:b.company,date:b.date,slot:b.slot,attendance:p.attendance||'Not Marked',hoursCompleted:p.hours_completed??0,progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0,remarks:p.remarks||''}})});
     }
     if(url.pathname==='/api/editor-availability'&&request.method==='GET') {
      const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled application dates.'},400);
@@ -147,6 +158,50 @@ export default {async fetch(request,env){
       console.error('Supabase session_progress mirror update matched no row for booking',bookingId);
      }
      return json({bookingId,attendance:b.attendance,hoursCompleted:b.hoursCompleted,progressStage:b.progressStage,progressPercent:b.progressPercent,remarks,updatedAt});
+    }
+    if(url.pathname==='/api/editor-session'&&request.method==='DELETE'){
+     if(request.headers.get('Origin')!==url.origin)return json({error:'Use the studio editor page.'},403);
+     const bookingId=url.searchParams.get('id')||'';
+     if(!uuidPattern.test(bookingId))return json({error:'Malformed booking ID.'},400);
+     // Deleting the booking row cascades to session_progress (see supabase/schema.sql's
+     // on-delete-cascade foreign key) and immediately frees the (app_id, date, slot, email)
+     // unique index, so the same visitor can book this exact app/date/slot again right away.
+     // Deliberately sends no email -- deleting a booking must never notify the visitor.
+     const result=await db.prepare('DELETE FROM bookings WHERE id = ?').bind(bookingId).run();
+     if((result.meta?.changes??result.changes)===0)return json({error:'Booking not found.'},404);
+     try{await deleteSheetRow(env,bookingId)}
+     catch(sheetErr){console.error('Google Sheets row delete failed for booking',bookingId,String(sheetErr))}
+     return json({deleted:true});
+    }
+    if(url.pathname==='/api/editor-booking'&&request.method==='PATCH'){
+     if(request.headers.get('Origin')!==url.origin)return json({error:'Use the studio editor page.'},403);
+     const bookingId=url.searchParams.get('id')||'';
+     if(!uuidPattern.test(bookingId))return json({error:'Malformed booking ID.'},400);
+     if(!request.headers.get('Content-Type')?.includes('application/json'))return json({error:'JSON required.'},415);
+     const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);
+     let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
+     const bookingRows=(await db.prepare('SELECT app_id, app_name, name, company, email, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
+     if(!bookingRows.length)return json({error:'Booking not found.'},404);
+     const booking=bookingRows[0];
+     // Reschedule targets must still be one of the app's own scheduled date/time combinations --
+     // this is an admin override of WHICH slot a visitor holds, not a way to invent new ones.
+     if(typeof b.date!=='string'||typeof b.slot!=='string'||!appSchedule[booking.app_id]?.some(entry=>entry.date===b.date&&entry.slot===b.slot))return json({error:'Choose one of the scheduled date/time combinations for this application.'},400);
+     if(b.date===booking.date&&b.slot===booking.slot)return json({error:'That is already the current date and time.'},400);
+     const progressRows=(await db.prepare('SELECT attendance, hours_completed, progress_stage, progress_percent, remarks, created_at FROM session_progress WHERE booking_id = ?').bind(bookingId).all()).results;
+     if(!progressRows.length)return json({error:'Session not found.'},404);
+     let updateResult;
+     try{updateResult=await db.prepare('UPDATE bookings SET date=?, slot=? WHERE id=?').bind(b.date,b.slot,bookingId).run()}
+     catch(e){if(String(e).includes('UNIQUE constraint'))return json({error:'This visitor already has a booking for that date and time.'},409);throw e}
+     if((updateResult.meta?.changes??updateResult.changes)===0)return json({error:'Booking not found.'},404);
+     const progress=progressRows[0],updatedAt=new Date().toISOString();
+     // Best-effort Sheet sync -- the reschedule itself is already committed in bookings above;
+     // a Sheet-sync failure here is logged, not treated as a failed reschedule.
+     try{await upsertSheetRow(env,{bookingId,date:b.date,slot:b.slot,appName:booking.app_name,name:booking.name,company:booking.company,attendance:progress.attendance,hoursCompleted:progress.hours_completed,progressStage:progress.progress_stage,progressPercent:progress.progress_percent,remarks:progress.remarks,createdAt:progress.created_at,updatedAt})}
+     catch(sheetErr){console.error('Google Sheets sync failed after reschedule for booking',bookingId,String(sheetErr))}
+     let emailSent=true;
+     try{await sendBookingEmail(env,{to:booking.email,name:booking.name,appName:booking.app_name,date:b.date,slot:b.slot,type:'reschedule'})}
+     catch(emailErr){emailSent=false;console.error('Reschedule email failed for',bookingId,String(emailErr))}
+     return json({bookingId,date:b.date,slot:b.slot,emailSent});
     }
     return json({error:'Not found'},404);
    }

@@ -68,3 +68,37 @@
 .calendar-day-arrow{color:#6647eb;font-size:11px}
 .calendar-day-detail{padding:0 12px 12px}
 @media(max-width:560px){.calendar-day-toggle{padding:12px}.calendar-day-count{margin-left:8px;font-size:11px}}
+
+/* Dashboard redesign: stats grid, day/week/all toggle, clickable booking chips, detail modal */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+.stat-card{border:1px solid #e2e5ed;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:4px;background:#fff}
+.stat-value{font-size:24px;font-weight:700}
+.stat-label{font-size:12px;color:#7d8492}
+@media(max-width:560px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+.calendar-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0}
+.view-toggle{display:inline-flex;border:1px solid #e2e5ed;border-radius:10px;overflow:hidden}
+.view-toggle-item{background:#fff;border:0;padding:8px 16px;font:inherit;font-size:13px;color:#7d8492;cursor:pointer}
+.view-toggle-item+.view-toggle-item{border-left:1px solid #e2e5ed}
+.view-toggle-item.selected{background:#6647eb;color:#fff;font-weight:650}
+#calendar-date-select{border:1px solid #e2e5ed;border-radius:8px;padding:8px 10px;font:inherit;font-size:13px}
+.calendar-day-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f7f5ff}
+.calendar-day-list{list-style:none;margin:0;padding:8px}
+.calendar-day-list li{margin:0}
+.calendar-day-empty{padding:0 16px 12px;color:#7d8492;font-size:13px}
+.calendar-booking-chip{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:0;border-radius:8px;font:inherit;text-align:left;cursor:pointer}
+.calendar-booking-chip:hover{background:#f7f5ff}
+.chip-time{font-weight:650;font-size:13px;min-width:70px}
+.chip-name{font-size:13px;flex:1}
+.chip-app{font-size:12px;color:#7d8492}
+.modal-backdrop{position:fixed;inset:0;background:rgba(20,18,32,.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:100}
+.modal-card{position:relative;background:#fff;border-radius:16px;padding:28px;max-width:440px;width:100%;max-height:85vh;overflow:auto}
+.modal-close{position:absolute;top:14px;right:14px;background:none;border:0;font-size:22px;line-height:1;color:#7d8492;cursor:pointer}
+.modal-remarks{font-size:13px;color:#4c5262;margin-top:10px}
+.editor-subsection{border-top:1px solid #e8ebf0;margin-top:22px;padding-top:18px}
+.editor-subsection h3{margin:0 0 6px;font-size:15px}
+.editor-subsection p{font-size:13px;color:#7d8492;margin:0 0 12px}
+.reschedule-form{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.reschedule-form select{border:1px solid #e2e5ed;border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;flex:1;min-width:220px}
+.editor-danger-zone{border-top-color:#f6d7d4}
+button.danger{background:#c23b34;color:#fff;border:0;border-radius:8px;padding:9px 16px;font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+button.danger:disabled{opacity:.6;cursor:default}

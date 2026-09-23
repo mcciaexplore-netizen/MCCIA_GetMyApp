@@ -320,6 +320,79 @@ test('session progress update reports 404 for a booking that was never created',
  db.close();
 });
 
+test('deleting a booking requires auth, removes its session_progress row via cascade, sends no email, and frees the slot for the same email to rebook',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey,...sheetsEnv};
+ const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
+ assert.equal((await worker.fetch(request('editor-session?id='+created.id,'DELETE'),env)).status,401);
+ assert.equal((await worker.fetch(request('editor-session?id=not-a-uuid','DELETE',undefined,editorKey),env)).status,400);
+ assert.equal((await worker.fetch(request('editor-session?id=00000000-0000-4000-8000-000000000000','DELETE',undefined,editorKey),env)).status,404);
+
+ const sheets=mockSheetsFetch(true);
+ let deleteRes;
+ try{deleteRes=await worker.fetch(request('editor-session?id='+created.id,'DELETE',undefined,editorKey),env)}
+ finally{sheets.restore()}
+ assert.equal(deleteRes.status,200);
+ assert.deepEqual(await deleteRes.json(),{deleted:true});
+ // No email is ever sent for a delete -- only a best-effort Sheet-row removal.
+ assert.equal(sheets.calls.length,1);
+ assert.equal(JSON.parse(sheets.calls[0].options.body).action,'DELETE_SESSION');
+ assert.equal(db.prepare('SELECT 1 FROM bookings WHERE id = ?').get(created.id),undefined);
+ assert.equal(db.prepare('SELECT 1 FROM session_progress WHERE booking_id = ?').get(created.id),undefined);
+
+ // The same email can immediately book the same app/date/slot again -- the unique index no
+ // longer has a conflicting row.
+ const rebooked=await worker.fetch(request('bookings','POST',booking),{DB});
+ assert.equal(rebooked.status,201);
+ db.close();
+});
+
+test('rescheduling a booking validates the new date/slot, updates it, and emails the visitor',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey,...sheetsEnv};
+ const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
+
+ assert.equal((await worker.fetch(request('editor-booking?id='+created.id,'PATCH',{date:'2026-10-07',slot:'15:30'}),env)).status,401);
+ assert.equal((await worker.fetch(request('editor-booking?id='+created.id,'PATCH',{date:'2026-10-07',slot:'11:00'},editorKey),env)).status,400); // not a valid combo for stocklist
+ assert.equal((await worker.fetch(request('editor-booking?id='+created.id,'PATCH',{date:booking.date,slot:booking.slot},editorKey),env)).status,400); // already current
+
+ const sheets=mockSheetsFetch(true);
+ let res;
+ try{res=await worker.fetch(request('editor-booking?id='+created.id,'PATCH',{date:'2026-10-07',slot:'15:30'},editorKey),env)}
+ finally{sheets.restore()}
+ assert.equal(res.status,200);
+ const body=await res.json();
+ assert.equal(body.date,'2026-10-07');
+ assert.equal(body.slot,'15:30');
+ assert.equal(body.emailSent,true);
+
+ const row=db.prepare('SELECT date, slot FROM bookings WHERE id = ?').get(created.id);
+ assert.equal(row.date,'2026-10-07');
+ assert.equal(row.slot,'15:30');
+
+ const emailCall=sheets.calls.find(c=>JSON.parse(c.options.body).action==='SEND_BOOKING_EMAIL');
+ assert.ok(emailCall,'a reschedule must send an email');
+ const sentBooking=JSON.parse(emailCall.options.body).booking;
+ assert.equal(sentBooking.type,'reschedule');
+ assert.equal(sentBooking.to,booking.email);
+ assert.equal(sentBooking.date,'2026-10-07');
+ assert.equal(sentBooking.slot,'15:30');
+ db.close();
+});
+
+test('rescheduling still succeeds even if the notification email fails to send',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey,...sheetsEnv};
+ const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
+ const sheets=mockSheetsFetch(false,'Simulated mail outage');
+ let res;
+ try{res=await worker.fetch(request('editor-booking?id='+created.id,'PATCH',{date:'2026-10-07',slot:'15:30'},editorKey),env)}
+ finally{sheets.restore()}
+ assert.equal(res.status,200);
+ const body=await res.json();
+ assert.equal(body.emailSent,false);
+ const row=db.prepare('SELECT date, slot FROM bookings WHERE id = ?').get(created.id);
+ assert.equal(row.date,'2026-10-07'); // the reschedule itself is not rolled back by a failed email
+ db.close();
+});
+
 test('Vercel database adapter keeps credentials server-side and maps atomic writes',async()=>{
  const original=global.fetch,calls=[];global.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/rpc/')?true:[]),{status:200})};
  try{const db=supabaseDatabase({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_test'});assert.deepEqual(await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind('2026-10-01').all(),{results:[]});const saved=await db.prepare('INSERT INTO bookings').bind('id','stocklist','Stocklist','2026-10-01','14:30','User','+91 98765 43210','user@example.com','Company').run();assert.equal(saved.meta.changes,1);await db.batch([db.prepare('INSERT INTO availability').bind('2026-10-01','14:30',0,0)]);assert.ok(calls[1].url.endsWith('/rpc/book_session'));assert.ok(calls[2].url.endsWith('/rpc/save_availability'));assert.equal(calls[0].options.headers.apikey,'sb_secret_test')}finally{global.fetch=original}

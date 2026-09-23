@@ -12,11 +12,13 @@ export function supabaseDatabase(env) {
    else if(sql==='SELECT date, slot, visible, active FROM availability WHERE date >= ? AND date <= ?')path='availability?select=date,slot,visible,active&date=gte.'+encodeURIComponent(v[0])+'&date=lte.'+encodeURIComponent(v[1]);
    else if(sql==='SELECT id, app_name, name, date, slot FROM bookings WHERE id = ?')path='bookings?select=id,app_name,name,date,slot&id=eq.'+encodeURIComponent(v[0]);
    else if(sql==='SELECT progress_stage, progress_percent FROM session_progress WHERE booking_id = ?')path='session_progress?select=progress_stage,progress_percent&booking_id=eq.'+encodeURIComponent(v[0]);
-   else if(sql==='SELECT id, app_name, name, company, date, slot FROM bookings ORDER BY date, slot')path='bookings?select=id,app_name,name,company,date,slot&order=date.asc,slot.asc';
+   else if(sql==='SELECT id, app_id, app_name, name, company, date, slot FROM bookings ORDER BY date, slot')path='bookings?select=id,app_id,app_name,name,company,date,slot&order=date.asc,slot.asc';
    else if(sql==='SELECT id, app_name, company FROM bookings')path='bookings?select=id,app_name,company';
    else if(sql==='SELECT booking_id, attendance, hours_completed, progress_stage, progress_percent, remarks FROM session_progress')path='session_progress?select=booking_id,attendance,hours_completed,progress_stage,progress_percent,remarks';
    else if(sql==='SELECT app_name, name, company, date, slot FROM bookings WHERE id = ?')path='bookings?select=app_name,name,company,date,slot&id=eq.'+encodeURIComponent(v[0]);
    else if(sql==='SELECT created_at FROM session_progress WHERE booking_id = ?')path='session_progress?select=created_at&booking_id=eq.'+encodeURIComponent(v[0]);
+   else if(sql==='SELECT app_id, app_name, name, company, email, date, slot FROM bookings WHERE id = ?')path='bookings?select=app_id,app_name,name,company,email,date,slot&id=eq.'+encodeURIComponent(v[0]);
+   else if(sql==='SELECT attendance, hours_completed, progress_stage, progress_percent, remarks, created_at FROM session_progress WHERE booking_id = ?')path='session_progress?select=attendance,hours_completed,progress_stage,progress_percent,remarks,created_at&booking_id=eq.'+encodeURIComponent(v[0]);
    else throw Error('Unsupported query');
    return {results:await call(path)}
   },async run(){
@@ -32,6 +34,14 @@ export function supabaseDatabase(env) {
    }
    if(sql==='UPDATE session_progress SET attendance=?, hours_completed=?, progress_stage=?, progress_percent=?, remarks=?, updated_at=? WHERE booking_id=?'){
     const saved=await call('session_progress?booking_id=eq.'+encodeURIComponent(v[6]),{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({attendance:v[0],hours_completed:v[1],progress_stage:v[2],progress_percent:v[3],remarks:v[4],updated_at:v[5]})});
+    return {meta:{changes:Array.isArray(saved)?saved.length:0}};
+   }
+   if(sql==='UPDATE bookings SET date=?, slot=? WHERE id=?'){
+    const saved=await call('bookings?id=eq.'+encodeURIComponent(v[2]),{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({date:v[0],slot:v[1]})});
+    return {meta:{changes:Array.isArray(saved)?saved.length:0}};
+   }
+   if(sql==='DELETE FROM bookings WHERE id = ?'){
+    const saved=await call('bookings?id=eq.'+encodeURIComponent(v[0]),{method:'DELETE',headers:{Prefer:'return=representation'}});
     return {meta:{changes:Array.isArray(saved)?saved.length:0}};
    }
    throw Error('Unsupported mutation');
