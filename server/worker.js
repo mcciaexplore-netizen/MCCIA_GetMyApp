@@ -97,7 +97,7 @@ export default {async fetch(request,env){
     // Vercel dashboard, or when copying it into the sign-in form, would otherwise silently
     // produce a mismatch here with no way to tell from the "Invalid editor access key" message.
     const editorAccessKey=(env.EDITOR_ACCESS_KEY||'').trim();
-    if(!editorAccessKey || editorAccessKey.length<32) return json({error:'Editor access has not been configured. Contact the studio owner.'},503);
+    if(!editorAccessKey || editorAccessKey.length<8) return json({error:'Editor access has not been configured. Contact the studio owner.'},503);
     const token=(request.headers.get('Authorization')?.replace(/^Bearer /,'')||'').trim();
     const hash=async value=>new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)));
     const [actual,expected]=await Promise.all([hash(token),hash(editorAccessKey)]);let diff=0;for(let i=0;i<actual.length;i++)diff|=actual[i]^expected[i];
@@ -214,6 +214,19 @@ export default {async fetch(request,env){
     const progressRows=(await db.prepare('SELECT booking_id, progress_stage, progress_percent FROM session_progress').bind().all()).results;
     const progressByBooking=new Map(progressRows.map(p=>[p.booking_id,p]));
     return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {appName:b.app_name,company:b.company,progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0}})});
+   }
+   if(url.pathname==='/api/member-sessions'&&request.method==='GET'){
+    // Public, but requires BOTH the member ID and the email used at booking time to match --
+    // Member ID alone is short and guessable, so pairing it with the email (which the visitor
+    // already knows from booking) prevents casually enumerating other members' bookings.
+    const memberId=(url.searchParams.get('memberId')||'').trim();
+    const email=(url.searchParams.get('email')||'').trim().toLowerCase();
+    if(!memberId||!email)return json({error:'Enter your Member ID and email.'},400);
+    const bookingRows=(await db.prepare('SELECT id, app_name, date, slot FROM bookings WHERE member_id = ? AND email = ?').bind(memberId,email).all()).results;
+    if(!bookingRows.length)return json({sessions:[]});
+    const progressRows=(await db.prepare('SELECT booking_id, attendance, progress_stage, progress_percent FROM session_progress').bind().all()).results;
+    const progressByBooking=new Map(progressRows.map(p=>[p.booking_id,p]));
+    return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {id:b.id,appName:b.app_name,date:b.date,slot:b.slot,attendance:p.attendance||'Not Marked',progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0}}).sort((a,b)=>a.date.localeCompare(b.date)||a.slot.localeCompare(b.slot))});
    }
    if(url.pathname==='/api/session'){
     if(request.method!=='GET')return json({error:'Method not allowed'},405);

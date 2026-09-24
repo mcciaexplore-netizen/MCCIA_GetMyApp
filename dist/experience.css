@@ -102,3 +102,20 @@
 .editor-danger-zone{border-top-color:#f6d7d4}
 button.danger{background:#c23b34;color:#fff;border:0;border-radius:8px;padding:9px 16px;font:inherit;font-size:13px;font-weight:650;cursor:pointer}
 button.danger:disabled{opacity:.6;cursor:default}
+
+/* Member dashboard (#/my-bookings) */
+.member-lookup-form{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;background:#fff;border:1px solid #e2e5ed;border-radius:14px;padding:20px;margin:18px 0}
+.member-lookup-form label{font-size:13px;color:#4c5262;flex:1;min-width:180px}
+.member-lookup-form input{display:block;margin-top:6px;padding:12px;border:1px solid #d9dfe7;border-radius:7px;font:inherit;width:100%;box-sizing:border-box}
+.member-lookup-form button{flex-shrink:0}
+.member-sessions-grid{display:grid;gap:12px;margin-top:8px}
+.member-session-card{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:#fff;border:1px solid #e2e5ed;border-radius:12px;padding:16px 18px;text-decoration:none;color:inherit;transition:border-color .15s,background .15s}
+.member-session-card:hover{border-color:#6647eb;background:#f7f5ff}
+.member-session-app{font-weight:650;font-size:15px}
+.member-session-when{font-size:13px;color:#7d8492}
+.member-session-status{display:flex;align-items:center;gap:10px;font-size:13px;color:#4c5262}
+@media(max-width:560px){.member-lookup-form{flex-direction:column;align-items:stretch}.member-session-card{flex-direction:column;align-items:flex-start}}
+
+/* Admin Sessions table: copy-to-clipboard for reporting */
+.sessions-toolbar{display:flex;align-items:center;gap:10px;margin:10px 0}
+.copy-status{font-size:12px;color:#1e8a4c}

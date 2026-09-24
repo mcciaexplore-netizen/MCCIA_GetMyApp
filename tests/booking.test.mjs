@@ -323,6 +323,31 @@ test('a booking without a member ID is rejected',async()=>{
  db.close();
 });
 
+test('member sessions requires both member ID and email, and only returns that member\'s own bookings across apps',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db);
+ assert.equal((await worker.fetch(request('member-sessions?memberId=MCCIA-1001'),{DB})).status,400);
+ assert.equal((await worker.fetch(request('member-sessions?email=test@example.com'),{DB})).status,400);
+ await worker.fetch(request('bookings','POST',booking),{DB});
+ await worker.fetch(request('bookings','POST',{...booking,appId:'tendersetu',date:'2026-09-28',slot:'14:30'}),{DB});
+ // A different member must never see this member's bookings, even with a guessed/known email.
+ await worker.fetch(request('bookings','POST',{...booking,appId:'gst-reconciliation',date:'2026-09-29',slot:'11:00',memberId:'OTHER-MEMBER'}),{DB});
+
+ const empty=await (await worker.fetch(request('member-sessions?memberId='+booking.memberId+'&email=wrong@example.com'),{DB})).json();
+ assert.deepEqual(empty.sessions,[]);
+
+ const res=await worker.fetch(request('member-sessions?memberId='+booking.memberId+'&email='+booking.email),{DB});
+ assert.equal(res.status,200);
+ const body=await res.json();
+ assert.equal(body.sessions.length,2);
+ assert.deepEqual(body.sessions.map(s=>s.appName).sort(),['Stocklist','TenderSetu']);
+ assert.ok(body.sessions.every(s=>s.progressStage==='Not Started'));
+ // Never exposes phone/name/company -- this is a public, unauthenticated endpoint.
+ const raw=JSON.stringify(body);
+ assert.equal(raw.includes(booking.phone),false);
+ assert.equal(raw.includes(booking.name),false);
+ db.close();
+});
+
 test('session progress update reports 404 for a booking that was never created',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey,...sheetsEnv};
  const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:50,remarks:''};

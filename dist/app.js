@@ -133,7 +133,7 @@ function qrBlockHTML(url){
 function confirmed(a){
  if(!receipt||receipt.appId!==a.id){location.hash='#/apps';return}
  document.title='Your session card | MCCIA AI Studio';
- root.innerHTML=`<div class="session-result"><div class="finish-header"><div class="finish-check">✓</div><h1>Your session is reserved.</h1><p>Download your card and keep your selected session details together.</p></div><article class="download-card" aria-label="Your session request card"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">SESSION RESERVED</span></div><div class="download-card-body"><div class="eyebrow">LET’S BUILD WHAT’S NEXT</div><h2>${esc(receipt.appName)}</h2><dl>${cardFields(receipt).map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${qrBlockHTML(sessionUrl(receipt.id))}</div><div class="download-card-foot"><strong>Card reference · ${esc(receipt.id.slice(0,8).toUpperCase())}</strong><span>Reserved with MCCIA Applied AI Studio.</span></div></article><div class="card-actions"><button id="download-card" class="primary">Download card (PNG) ↓</button><a class="text-button" href="#/session/${receipt.id}">View session →</a><a class="text-button" href="#/apps/${a.id}/details">Edit details</a></div><p id="card-download-status" role="status"></p><p class="card-privacy-note">This card image is only saved to your device when you download it.</p><p class="progress-link"><a class="text-button" href="#/progress">See everyone’s progress →</a></p><a class="back" href="#/apps">← Explore applications</a></div>`;
+ root.innerHTML=`<div class="session-result"><div class="finish-header"><div class="finish-check">✓</div><h1>Your session is reserved.</h1><p>Download your card and keep your selected session details together.</p></div><article class="download-card" aria-label="Your session request card"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">SESSION RESERVED</span></div><div class="download-card-body"><div class="eyebrow">LET’S BUILD WHAT’S NEXT</div><h2>${esc(receipt.appName)}</h2><dl>${cardFields(receipt).map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${qrBlockHTML(sessionUrl(receipt.id))}</div><div class="download-card-foot"><strong>Card reference · ${esc(receipt.id.slice(0,8).toUpperCase())}</strong><span>Reserved with MCCIA Applied AI Studio.</span></div></article><div class="card-actions"><button id="download-card" class="primary">Download card (PNG) ↓</button><a class="text-button" href="#/session/${receipt.id}">View session →</a><a class="text-button" href="#/apps/${a.id}/details">Edit details</a></div><p id="card-download-status" role="status"></p><p class="card-privacy-note">This card image is only saved to your device when you download it.</p><p class="progress-link"><a class="text-button" href="#/progress">See everyone’s progress →</a> · <a class="text-button" href="#/my-bookings">See all my bookings →</a></p><a class="back" href="#/apps">← Explore applications</a></div>`;
  root.querySelector('#download-card').onclick=async e=>{const button=e.currentTarget;button.disabled=true;button.textContent='Preparing your card…';try{await downloadSessionCard(receipt);root.querySelector('#card-download-status').textContent='Download started. Your session card is ready to save.'}catch{root.querySelector('#card-download-status').textContent='The download could not be created. Please try again.'}finally{button.disabled=false;button.textContent='Download card (PNG) ↓'}};
 }
 async function downloadSessionCard(r){
@@ -212,7 +212,7 @@ function renderSessionView(bookingId){
     <button type="button" class="text-button" id="session-staff-signout" style="margin-top:14px">Sign out of staff mode</button>
    </div>`
   :`<article class="download-card" aria-label="Session progress"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">${esc(sessionData.progressStage.toUpperCase())}</span></div><div class="download-card-body"><div class="eyebrow">PARTICIPANT</div><h2>${esc(sessionData.name)}</h2><dl class="session-summary-grid"><div><dt>Application</dt><dd>${esc(sessionData.appName)}</dd></div><div><dt>Date</dt><dd>${fullDate(sessionData.date)}</dd></div><div><dt>Time</dt><dd>${timeLabels[sessionData.slot]||esc(sessionData.slot)} IST</dd></div></dl><div class="progress-block"><div class="eyebrow">PROGRESS</div><strong>${esc(sessionData.progressStage)}</strong>${progressBar(sessionData.progressPercent)}<span class="progress-percent">${sessionData.progressPercent}%</span></div></div></article>
-   <p class="progress-link"><a class="text-button" href="#/progress">See everyone's progress →</a></p>
+   <p class="progress-link"><a class="text-button" href="#/progress">See everyone's progress →</a> · <a class="text-button" href="#/my-bookings">See all my bookings →</a></p>
    <details class="staff-unlock"><summary>Staff sign-in</summary><form id="session-unlock-form"><label>Access key<div class="password-field"><input type="password" name="key" required id="session-key-input"><button type="button" id="session-toggle-key">Show</button></div></label>${sessionUnlockError?`<p class="error" role="alert">${esc(sessionUnlockError)}</p>`:''}<button class="primary" ${sessionUnlockBusy?'disabled':''}>${sessionUnlockBusy?'Checking…':'Unlock editing'}</button></form></details>`
  }<a class="back" href="#/apps">← Explore applications</a></div>`;
  root.querySelector('#session-toggle-key')?.addEventListener('click',e=>{const input=root.querySelector('#session-key-input'),btn=e.currentTarget;const showing=input.type==='text';input.type=showing?'password':'text';btn.textContent=showing?'Show':'Hide'});
@@ -230,6 +230,40 @@ function renderSessionView(bookingId){
   err=>sessionSaveError=err,
   msg=>sessionSaveMessage=msg,
   ()=>renderSessionView(bookingId));
+}
+
+// ---- Member dashboard (#/my-bookings) -- public. Requires Member ID + email together (not
+// Member ID alone) so a short, semi-guessable Member ID can't be used to enumerate other
+// members' bookings; the visitor already knows both from when they booked. ----
+let memberLookup={memberId:'',email:''},memberSessions=null,memberError='',memberLoading=false,memberSearched=false;
+async function memberView(){
+ document.title='My bookings | MCCIA AI Studio';
+ renderMemberView();
+}
+function renderMemberView(){
+ root.innerHTML=`<div class="container session-view"><div class="finish-header"><div class="eyebrow">MCCIA APPLIED AI STUDIO</div><h1>My bookings</h1><p>Enter the Member ID and email you used while booking to see every session you've reserved.</p></div>
+ <form id="member-lookup-form" class="member-lookup-form"><label>Member ID<input required maxlength="50" name="memberId" value="${esc(memberLookup.memberId)}" placeholder="Your MCCIA member ID"></label><label>Email address<input required type="email" maxlength="254" name="email" value="${esc(memberLookup.email)}" placeholder="you@company.com"></label><button class="primary" ${memberLoading?'disabled':''}>${memberLoading?'Searching…':'Show my bookings'}</button></form>
+ ${memberError?`<p class="error" role="alert">${esc(memberError)}</p>`:''}
+ ${!memberSearched||memberLoading?''
+  :!memberSessions?.length?'<p>No bookings found for that Member ID and email.</p>'
+  :`<div class="member-sessions-grid">${memberSessions.map(s=>`<a class="member-session-card" href="#/session/${s.id}">
+    <div class="member-session-app">${esc(s.appName)}</div>
+    <div class="member-session-when">${dateLabel(s.date)} · ${timeLabels[s.slot]||esc(s.slot)}</div>
+    <div class="member-session-status"><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span><span>${s.progressPercent}%</span></div>
+   </a>`).join('')}</div>`
+ }
+ <a class="back" href="#/apps">← Explore applications</a></div>`;
+ root.querySelector('#member-lookup-form').onsubmit=async e=>{
+  e.preventDefault();
+  const fd=new FormData(e.target);
+  memberLookup={memberId:fd.get('memberId').trim(),email:fd.get('email').trim()};
+  memberLoading=true;memberError='';renderMemberView();
+  try{
+   const r=await api('member-sessions?memberId='+encodeURIComponent(memberLookup.memberId)+'&email='+encodeURIComponent(memberLookup.email));
+   memberSessions=r.sessions;memberSearched=true;
+  }catch(err){memberError=err.message}
+  finally{memberLoading=false;renderMemberView()}
+ };
 }
 
 // ---- Shared progress view (#/progress) -- public, company + application only, never names ----
@@ -393,6 +427,7 @@ function viewToggleHTML(){return `<div class="view-toggle" role="tablist">${[['d
 // Google-Calendar-style detail popup for one booking, opened by clicking its chip in the
 // day/week/all list below -- shows the same fields as the admin table row, plus a link through
 // to the full editable session page.
+let calendarModalStageBusy=false,calendarModalStageError='',calendarModalStageMessage='',calendarModalDeleteConfirming=false,calendarModalDeleteBusy=false,calendarModalDeleteError='';
 function calendarModalHTML(){
  const s=editorSessions.find(r=>r.id===calendarModalId);if(!s)return '';
  return `<div class="modal-backdrop" id="calendar-modal-backdrop"><div class="modal-card" role="dialog" aria-modal="true" aria-label="Booking details">
@@ -411,11 +446,27 @@ function calendarModalHTML(){
    <div><dt>Hours</dt><dd>${s.hoursCompleted}</dd></div>
   </dl>
   ${s.remarks?`<p class="modal-remarks"><strong>Remarks:</strong> ${esc(s.remarks)}</p>`:''}
-  <a class="primary" href="#/editor/session/${s.id}">Open full session →</a>
+  <form id="calendar-modal-stage-form" class="reschedule-form" style="margin-top:16px">
+   <select name="progressStage">${progressStageOptions.map(v=>`<option value="${v}" ${s.progressStage===v?'selected':''}>${v}</option>`).join('')}</select>
+   <button class="primary" ${calendarModalStageBusy?'disabled':''}>${calendarModalStageBusy?'Saving…':'Quick update stage'}</button>
+  </form>
+  ${calendarModalStageError?`<p class="error" role="alert">${esc(calendarModalStageError)}</p>`:''}
+  ${calendarModalStageMessage?`<p class="editor-message" role="status">${esc(calendarModalStageMessage)}</p>`:''}
+  <div class="modal-actions" style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+   <a class="text-button" href="#/editor/session/${s.id}">Open full session (edit, reschedule, delete) →</a>
+  </div>
+  ${calendarModalDeleteError?`<p class="error" role="alert">${esc(calendarModalDeleteError)}</p>`:''}
+  ${calendarModalDeleteConfirming
+   ?`<p style="margin-top:12px">Delete this booking? No email is sent, and this cannot be undone.</p><button type="button" class="danger" id="calendar-modal-delete-yes" ${calendarModalDeleteBusy?'disabled':''}>${calendarModalDeleteBusy?'Deleting…':'Yes, delete'}</button> <button type="button" class="text-button" id="calendar-modal-delete-no" ${calendarModalDeleteBusy?'disabled':''}>Cancel</button>`
+   :`<button type="button" class="text-button" id="calendar-modal-delete-start" style="margin-top:12px;color:#c23b34">Delete booking</button>`}
  </div></div>`;
 }
 function availabilityPanelHTML(){return `<div class="editor-toolbar"><label>Choose a date<select id="editor-date"><option value="">Select a scheduled date</option>${eventDates.map(date=>`<option value="${date}" ${date===editorDate?'selected':''}>${dateLabel(date)} 2026</option>`).join('')}</select></label></div><div class="editor-board">${editorSlots?`<div class="section-heading"><h2>${dateLabel(editorDate)}</h2><span>Changes apply to all applications</span></div><form id="editor-save"><div class="day-actions"><button type="button" data-day-action="show">Show day</button><button type="button" data-day-action="hide">Hide day</button><button type="button" data-day-action="activate">Activate day</button><button type="button" data-day-action="deactivate">Deactivate day</button></div><div class="editor-row editor-table-head"><span>One-hour session</span><span>Display</span><span>Active</span></div>${editorSlots.map(s=>`<div class="editor-row"><strong>${timeLabels[s.time]}</strong><label><input type="checkbox" data-visible="${s.time}" ${s.visible?'checked':''} aria-label="Display ${timeLabels[s.time]}"><span>Show</span></label><label><input type="checkbox" data-active="${s.time}" ${s.active?'checked':''} ${s.booked?'disabled':''} aria-label="Activate ${timeLabels[s.time]}"><span>${s.booked?'Booked':'Bookable'}</span></label></div>`).join('')}<p>Hidden slots do not appear to visitors. Inactive slots remain visible but cannot be booked. Existing bookings are preserved.</p><button class="primary">Save availability ✓</button></form>`:'<p>Select a scheduled date to manage its three session slots.</p>'}</div>`}
-function sessionsPanelHTML(){return `<div class="editor-board"><div class="section-heading"><h2>Sessions</h2><span>${editorSessions?editorSessions.length+' total':''}</span></div>${editorSessionsLoading?'<p role="status">Loading sessions…</p>':''}${editorSessionsError?`<p class="error" role="alert">${esc(editorSessionsError)} <button type="button" id="retry-sessions">Try again</button></p>`:''}${editorSessions&&!editorSessionsLoading?(editorSessions.length?`<div class="sessions-table-wrap"><table class="sessions-table"><thead><tr><th>Participant</th><th>Application</th><th>Date</th><th>Time</th><th>Company</th><th>Attendance</th><th>Hours</th><th>Stage</th><th>%</th><th></th></tr></thead><tbody>${editorSessions.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.appName)}</td><td>${dateLabel(s.date)}</td><td>${timeLabels[s.slot]||esc(s.slot)}</td><td>${esc(s.company||'—')}</td><td><span class="status-pill" style="${attendanceStyles[s.attendance]||''}">${esc(s.attendance)}</span></td><td>${s.hoursCompleted}</td><td><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span></td><td>${s.progressPercent}%</td><td><a class="text-button" href="#/editor/session/${s.id}">View session</a></td></tr>`).join('')}</tbody></table></div>`:'<p>No bookings yet.</p>'):''}</div>`}
+const sessionsTableColumns=[['Member ID',s=>s.memberId],['Participant',s=>s.name],['Phone',s=>s.phone],['Email',s=>s.email],['Application',s=>s.appName],['Date',s=>dateLabel(s.date)],['Time',s=>timeLabels[s.slot]||s.slot],['Company',s=>s.company||''],['Attendance',s=>s.attendance],['Hours',s=>s.hoursCompleted],['Stage',s=>s.progressStage],['%',s=>s.progressPercent]];
+// Builds a tab-separated block (header row + one row per booking) so pasting into Excel/Sheets
+// lands each field in its own column -- the standard clipboard format spreadsheets expect.
+function sessionsTableTSV(){return [sessionsTableColumns.map(([label])=>label).join('\t'),...editorSessions.map(s=>sessionsTableColumns.map(([,get])=>String(get(s)??'')).join('\t'))].join('\n')}
+function sessionsPanelHTML(){return `<div class="editor-board"><div class="section-heading"><h2>Sessions</h2><span>${editorSessions?editorSessions.length+' total':''}</span></div>${editorSessionsLoading?'<p role="status">Loading sessions…</p>':''}${editorSessionsError?`<p class="error" role="alert">${esc(editorSessionsError)} <button type="button" id="retry-sessions">Try again</button></p>`:''}${editorSessions&&!editorSessionsLoading?(editorSessions.length?`<div class="sessions-toolbar"><button type="button" class="text-button" id="copy-sessions-table">Copy table for reporting ⧉</button><span class="copy-status" id="copy-sessions-status" role="status"></span></div><div class="sessions-table-wrap"><table class="sessions-table"><thead><tr>${sessionsTableColumns.map(([label])=>`<th>${label}</th>`).join('')}<th></th></tr></thead><tbody>${editorSessions.map(s=>`<tr><td>${esc(s.memberId||'—')}</td><td>${esc(s.name)}</td><td>${esc(s.phone||'—')}</td><td>${esc(s.email||'—')}</td><td>${esc(s.appName)}</td><td>${dateLabel(s.date)}</td><td>${timeLabels[s.slot]||esc(s.slot)}</td><td>${esc(s.company||'—')}</td><td><span class="status-pill" style="${attendanceStyles[s.attendance]||''}">${esc(s.attendance)}</span></td><td>${s.hoursCompleted}</td><td><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span></td><td>${s.progressPercent}%</td><td><a class="text-button" href="#/editor/session/${s.id}">View session</a></td></tr>`).join('')}</tbody></table></div>`:'<p>No bookings yet.</p>'):''}</div>`}
 function calendarPanelHTML(){
  if(!editorSessions)return `<div class="editor-board">${editorSessionsLoading?'<p role="status">Loading calendar…</p>':editorSessionsError?`<p class="error" role="alert">${esc(editorSessionsError)} <button type="button" id="retry-sessions">Try again</button></p>`:''}</div>`;
  const byDate=new Map();
@@ -453,12 +504,41 @@ root.querySelector('#toggle-key-visibility')?.addEventListener('click',e=>{const
 root.querySelector('#sign-out')?.addEventListener('click',()=>{editorToken='';editorSlots=null;editorSessions=null;editorTab='sessions';calendarViewMode='all';calendarSelectedDate='';calendarModalId=null;editorMessage='';editor()});
 root.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{editorTab=b.dataset.tab;if((editorTab==='sessions'||editorTab==='dashboard')&&!editorSessions)loadEditorSessions();else editor()});
 root.querySelector('#retry-sessions')?.addEventListener('click',()=>loadEditorSessions());
+root.querySelector('#copy-sessions-table')?.addEventListener('click',async()=>{
+ const status=root.querySelector('#copy-sessions-status');
+ try{await navigator.clipboard.writeText(sessionsTableTSV());status.textContent='Copied — paste into Excel or Sheets.'}
+ catch{status.textContent='Could not copy automatically. Select the table and copy manually.'}
+ setTimeout(()=>{if(status)status.textContent=''},4000);
+});
 root.querySelectorAll('[data-view-mode]').forEach(b=>b.onclick=()=>{calendarViewMode=b.dataset.viewMode;editor()});
 root.querySelector('#calendar-date-select')?.addEventListener('change',e=>{calendarSelectedDate=e.target.value;editor()});
-root.querySelectorAll('[data-booking-id]').forEach(b=>b.onclick=()=>{calendarModalId=b.dataset.bookingId;editor()});
+root.querySelectorAll('[data-booking-id]').forEach(b=>b.onclick=()=>{calendarModalId=b.dataset.bookingId;calendarModalStageError='';calendarModalStageMessage='';calendarModalDeleteConfirming=false;calendarModalDeleteError='';editor()});
 root.querySelector('#calendar-modal-backdrop')?.addEventListener('click',e=>{if(e.target.id==='calendar-modal-backdrop'){calendarModalId=null;editor()}});
 root.querySelector('#calendar-modal-close')?.addEventListener('click',()=>{calendarModalId=null;editor()});
+root.querySelector('#calendar-modal-stage-form')?.addEventListener('submit',async e=>{
+ e.preventDefault();
+ const s=editorSessions.find(r=>r.id===calendarModalId);if(!s)return;
+ const progressStage=new FormData(e.target).get('progressStage');
+ calendarModalStageBusy=true;calendarModalStageError='';calendarModalStageMessage='';editor();
+ try{
+  const saved=await api('editor-session?id='+encodeURIComponent(s.id),{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+editorToken},body:JSON.stringify({attendance:s.attendance,hoursCompleted:s.hoursCompleted,progressStage,progressPercent:s.progressPercent,remarks:s.remarks})});
+  const idx=editorSessions.findIndex(r=>r.id===s.id);if(idx!==-1)editorSessions[idx]={...editorSessions[idx],progressStage:saved.progressStage};
+  calendarModalStageMessage='Stage updated.';
+ }catch(err){calendarModalStageError=err.message}
+ finally{calendarModalStageBusy=false;editor()}
+});
+root.querySelector('#calendar-modal-delete-start')?.addEventListener('click',()=>{calendarModalDeleteConfirming=true;editor()});
+root.querySelector('#calendar-modal-delete-no')?.addEventListener('click',()=>{calendarModalDeleteConfirming=false;editor()});
+root.querySelector('#calendar-modal-delete-yes')?.addEventListener('click',async()=>{
+ const id=calendarModalId;
+ calendarModalDeleteBusy=true;calendarModalDeleteError='';editor();
+ try{
+  await api('editor-session?id='+encodeURIComponent(id),{method:'DELETE',headers:{Authorization:'Bearer '+editorToken}});
+  editorSessions=editorSessions.filter(r=>r.id!==id);
+  calendarModalId=null;calendarModalDeleteBusy=false;calendarModalDeleteConfirming=false;editor();
+ }catch(err){calendarModalDeleteBusy=false;calendarModalDeleteError=err.message;editor()}
+});
 root.querySelector('#editor-date')?.addEventListener('change',async e=>{editorDate=e.target.value;editorSlots=null;try{const r=await api('editor-availability?date='+editorDate,{headers:{Authorization:'Bearer '+editorToken}});editorSlots=r.slots;editorMessage='';}catch(e){editorMessage=e.message}editor()});root.querySelectorAll('[data-day-action]').forEach(b=>b.onclick=()=>{const action=b.dataset.dayAction;const attr=['show','hide'].includes(action)?'data-visible':'data-active';root.querySelectorAll('['+attr+']').forEach(input=>{if(!input.disabled)input.checked=['show','activate'].includes(action)});});root.querySelector('#editor-save')?.addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const slots=editorSlots.map(s=>({time:s.time,visible:root.querySelector(`[data-visible="${s.time}"]`).checked,active:root.querySelector(`[data-active="${s.time}"]`).checked}));try{await api('editor-availability',{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+editorToken},body:JSON.stringify({date:editorDate,slots})});editorSlots=editorSlots.map(s=>({...s,...slots.find(r=>r.time===s.time)}));editorMessage='Availability saved. Visitors will see the updated schedule.'}catch(e){editorMessage=e.message}editor()});}
-function render(){requestNumber++;const parts=location.hash.slice(1).split('/').filter(Boolean);document.body.classList.toggle('is-landing',!parts.length);document.body.classList.toggle('is-booking',['book','details'].includes(parts[2]));document.body.classList.toggle('is-slot-page',parts[2]==='book');if(!parts.length)landing();else if(parts[0]==='progress')progressView();else if(parts[0]==='session'&&parts[1])sessionView(parts[1]);else if(parts[0]==='editor'&&parts[1]==='session'&&parts[2])editorSessionView(parts[2]);else if(parts[0]==='editor')editor();else if(parts[0]==='apps'&&parts.length===1)catalog();else{const a=apps.find(a=>a.id===parts[1]);if(a&&parts[0]==='apps'){if(activeApp?.id!==a.id){selectedDate=null;selectedSlot=null;schedule=[];availability=[];receipt=null;}activeApp=a;switch(parts[2]){case undefined:detail(a);break;case 'book':booking(a);if(!schedule.length)loadSchedule(a);break;case 'details':finalDetails(a);break;case 'confirmed':confirmed(a);break;default:location.hash='#/apps';}}else location.hash='#/apps';}window.scrollTo(0,0)}
+function render(){requestNumber++;const parts=location.hash.slice(1).split('/').filter(Boolean);document.body.classList.toggle('is-landing',!parts.length);document.body.classList.toggle('is-booking',['book','details'].includes(parts[2]));document.body.classList.toggle('is-slot-page',parts[2]==='book');if(!parts.length)landing();else if(parts[0]==='progress')progressView();else if(parts[0]==='my-bookings')memberView();else if(parts[0]==='session'&&parts[1])sessionView(parts[1]);else if(parts[0]==='editor'&&parts[1]==='session'&&parts[2])editorSessionView(parts[2]);else if(parts[0]==='editor')editor();else if(parts[0]==='apps'&&parts.length===1)catalog();else{const a=apps.find(a=>a.id===parts[1]);if(a&&parts[0]==='apps'){if(activeApp?.id!==a.id){selectedDate=null;selectedSlot=null;schedule=[];availability=[];receipt=null;}activeApp=a;switch(parts[2]){case undefined:detail(a);break;case 'book':booking(a);if(!schedule.length)loadSchedule(a);break;case 'details':finalDetails(a);break;case 'confirmed':confirmed(a);break;default:location.hash='#/apps';}}else location.hash='#/apps';}window.scrollTo(0,0)}
 window.addEventListener('hashchange',render);render();
 if(document.modelContext?.registerTool){try{Promise.resolve(document.modelContext.registerTool({name:'start_app_booking',title:'Open app development booking',description:'Open an application’s date and time selection. This does not reserve a slot.',inputSchema:{type:'object',properties:{appId:{type:'string',enum:apps.map(a=>a.id)}},required:['appId'],additionalProperties:false},annotations:{readOnlyHint:false},execute:async({appId})=>{if(!apps.some(a=>a.id===appId))throw new Error('Unknown application');history.replaceState(null,'',`#/apps/${appId}/book`);render();return {appId,stage:'select_date_and_time',booked:false}}})).catch(()=>{});}catch{}}
