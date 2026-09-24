@@ -429,6 +429,23 @@ test('rescheduling still succeeds even if the notification email fails to send',
  db.close();
 });
 
+test('every public GET route resolves its queries against the real Supabase adapter (catches missing query-pattern branches)',async()=>{
+ // Regression test: /api/progress once threw "Unsupported query" in production because
+ // supabase.js had no branch for its exact SQL string, even though local SQLite tests (which
+ // run the SQL directly, not pattern-matched) never caught it. This exercises every public GET
+ // route through the SAME supabaseDatabase() adapter production uses, with fetch mocked to
+ // return empty results, so a missing branch shows up as a 503 here instead of only in prod.
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify([]),{status:200});
+ try{
+  const DB=supabaseDatabase({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_test'});
+  for(const path of ['progress','schedule?appId=stocklist','availability?date=2026-10-01&appId=stocklist','member-sessions?memberId=x&email=y']){
+   const res=await worker.fetch(request(path),{DB});
+   assert.notEqual(res.status,503,path+' returned 503 -- likely an unsupported-query gap in supabase.js');
+  }
+ }finally{global.fetch=original}
+});
+
 test('Vercel database adapter keeps credentials server-side and maps atomic writes',async()=>{
  const original=global.fetch,calls=[];global.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/rpc/')?true:[]),{status:200})};
  try{const db=supabaseDatabase({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SECRET_KEY:'sb_secret_test'});assert.deepEqual(await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind('2026-10-01').all(),{results:[]});const saved=await db.prepare('INSERT INTO bookings').bind('id','stocklist','Stocklist','2026-10-01','14:30','User','+91 98765 43210','user@example.com','Company').run();assert.equal(saved.meta.changes,1);await db.batch([db.prepare('INSERT INTO availability').bind('2026-10-01','14:30',0,0)]);assert.ok(calls[1].url.endsWith('/rpc/book_session'));assert.ok(calls[2].url.endsWith('/rpc/save_availability'));assert.equal(calls[0].options.headers.apikey,'sb_secret_test')}finally{global.fetch=original}
