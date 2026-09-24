@@ -42,23 +42,29 @@
 @media(max-width:800px){.sessions-table{min-width:640px}}
 @media(max-width:560px){.session-edit-form{max-width:100%}.admin-nav{gap:2px}.admin-nav-item{padding:9px 10px;font-size:13px}.session-summary-grid{grid-template-columns:1fr}}
 
-/* QR code on the booking confirmation card */
+/* QR code on the booking confirmation card. .session-qr-top is used when the QR is the first
+   thing in the card (see confirmed()/renderSessionView()) -- a bottom divider instead of a top
+   one, since there's nothing above it to separate from. */
 .session-qr{text-align:center;margin-top:26px;padding-top:22px;border-top:1px solid #e8ebf0}
+.session-qr-top{margin-top:0;padding-top:0;border-top:0;padding-bottom:22px;border-bottom:1px solid #e8ebf0;margin-bottom:22px}
 .session-qr img{max-width:100%;height:auto;border-radius:10px;background:#fff;padding:10px;border:1px solid #e5e6ed}
 .session-qr p{font-size:12px;color:#7d8492;margin:10px 0 0;line-height:1.5}
 @media(max-width:560px){.session-qr img{width:180px}}
 
 .password-field{position:relative;display:flex;align-items:center}
-.password-field input{flex:1;padding-right:70px}
-.password-field button{position:absolute;right:6px;background:none;border:0;color:#6647eb;font-size:13px;font-weight:650;cursor:pointer;padding:8px 10px}
+.password-field input{flex:1;padding:13px 70px 13px 13px;border:1px solid #d9dfe7;border-radius:7px;font:inherit;width:100%;box-sizing:border-box;margin-top:8px}
+.password-field button{position:absolute;right:6px;top:14px;background:none;border:0;color:#6647eb;font-size:13px;font-weight:650;cursor:pointer;padding:8px 10px}
 
-/* Staff inline unlock on the public session page, shared progress view, calendar view */
+/* Staff inline unlock on the public session page, shared progress view, calendar view --
+   styled as a contained card once opened so it doesn't look like a bare unstyled form. */
 .progress-link{text-align:center;margin:14px 0 0}
-.staff-unlock{margin-top:26px;padding-top:18px;border-top:1px solid #e8ebf0;font-size:13px;color:#7d8492}
+.staff-unlock{margin-top:22px;padding-top:16px;border-top:1px solid #e8ebf0;font-size:13px;color:#7d8492}
 .staff-unlock summary{cursor:pointer;color:#6647eb;font-weight:650;list-style:none}
 .staff-unlock summary::-webkit-details-marker{display:none}
-.staff-unlock form{margin-top:14px;max-width:320px}
+.staff-unlock[open] summary{margin-bottom:4px}
+.staff-unlock form{margin-top:14px;max-width:320px;background:#fff;border:1px solid #e2e5ed;border-radius:12px;padding:18px;box-sizing:border-box}
 .staff-unlock label{display:block;font-size:14px}
+.staff-unlock form .primary{margin-top:18px;width:100%}
 .calendar-grid{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .calendar-day{border:1px solid #e2e5ed;border-radius:12px;overflow:hidden}
 .calendar-day-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:#fff;border:0;font:inherit;text-align:left;cursor:pointer}
@@ -69,23 +75,28 @@
 .calendar-day-detail{padding:0 12px 12px}
 @media(max-width:560px){.calendar-day-toggle{padding:12px}.calendar-day-count{margin-left:8px;font-size:11px}}
 
-/* Dashboard redesign: stats grid, day/week/all toggle, clickable booking chips, detail modal */
-.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
-.stat-card{border:1px solid #e2e5ed;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:4px;background:#fff}
-.stat-value{font-size:24px;font-weight:700}
-.stat-label{font-size:12px;color:#7d8492}
+/* Dashboard redesign: stats grid, day/week/all toggle, clickable booking chips, detail modal.
+   Kept deliberately compact (small gaps/padding) -- this tab is scanned, not read, and dense
+   spacing lets more of the day's bookings show without scrolling. */
+.editor-board{padding:20px}
+.stats-toolbar{display:flex;align-items:center;gap:10px;margin:8px 0 0}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0 4px}
+.stat-card{border:1px solid #e2e5ed;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;background:#fff}
+.stat-value{font-size:21px;font-weight:700;line-height:1.15}
+.stat-label{font-size:11px;color:#7d8492}
 @media(max-width:560px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
-.calendar-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0}
+.calendar-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}
 .view-toggle{display:inline-flex;border:1px solid #e2e5ed;border-radius:10px;overflow:hidden}
-.view-toggle-item{background:#fff;border:0;padding:8px 16px;font:inherit;font-size:13px;color:#7d8492;cursor:pointer}
+.view-toggle-item{background:#fff;border:0;padding:7px 14px;font:inherit;font-size:13px;color:#7d8492;cursor:pointer}
 .view-toggle-item+.view-toggle-item{border-left:1px solid #e2e5ed}
 .view-toggle-item.selected{background:#6647eb;color:#fff;font-weight:650}
-#calendar-date-select{border:1px solid #e2e5ed;border-radius:8px;padding:8px 10px;font:inherit;font-size:13px}
-.calendar-day-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f7f5ff}
-.calendar-day-list{list-style:none;margin:0;padding:8px}
+#calendar-date-select{border:1px solid #e2e5ed;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px}
+.calendar-grid{gap:8px}
+.calendar-day-header{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:#f7f5ff}
+.calendar-day-list{list-style:none;margin:0;padding:6px}
 .calendar-day-list li{margin:0}
-.calendar-day-empty{padding:0 16px 12px;color:#7d8492;font-size:13px}
-.calendar-booking-chip{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:0;border-radius:8px;font:inherit;text-align:left;cursor:pointer}
+.calendar-day-empty{padding:0 14px 10px;color:#7d8492;font-size:13px}
+.calendar-booking-chip{width:100%;display:flex;align-items:center;gap:10px;padding:8px 10px;background:#fff;border:0;border-radius:8px;font:inherit;text-align:left;cursor:pointer}
 .calendar-booking-chip:hover{background:#f7f5ff}
 .chip-time{font-weight:650;font-size:13px;min-width:70px}
 .chip-name{font-size:13px;flex:1}

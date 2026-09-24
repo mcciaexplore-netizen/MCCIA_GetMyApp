@@ -133,7 +133,7 @@ function qrBlockHTML(url){
 function confirmed(a){
  if(!receipt||receipt.appId!==a.id){location.hash='#/apps';return}
  document.title='Your session card | MCCIA AI Studio';
- root.innerHTML=`<div class="session-result"><div class="finish-header"><div class="finish-check">✓</div><h1>Your session is reserved.</h1><p>Download your card and keep your selected session details together.</p></div><article class="download-card" aria-label="Your session request card"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">SESSION RESERVED</span></div><div class="download-card-body"><div class="eyebrow">LET’S BUILD WHAT’S NEXT</div><h2>${esc(receipt.appName)}</h2><dl>${cardFields(receipt).map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${qrBlockHTML(sessionUrl(receipt.id))}</div><div class="download-card-foot"><strong>Card reference · ${esc(receipt.id.slice(0,8).toUpperCase())}</strong><span>Reserved with MCCIA Applied AI Studio.</span></div></article><div class="card-actions"><button id="download-card" class="primary">Download card (PNG) ↓</button><a class="text-button" href="#/session/${receipt.id}">View session →</a><a class="text-button" href="#/apps/${a.id}/details">Edit details</a></div><p id="card-download-status" role="status"></p><p class="card-privacy-note">This card image is only saved to your device when you download it.</p><p class="progress-link"><a class="text-button" href="#/progress">See everyone’s progress →</a> · <a class="text-button" href="#/my-bookings">See all my bookings →</a></p><a class="back" href="#/apps">← Explore applications</a></div>`;
+ root.innerHTML=`<div class="session-result"><div class="finish-header"><div class="finish-check">✓</div><h1>Your session is reserved.</h1><p>Download your card and keep your selected session details together.</p></div><article class="download-card" aria-label="Your session request card"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">SESSION RESERVED</span></div><div class="download-card-body">${qrBlockHTML(sessionUrl(receipt.id)).replace('class="session-qr"','class="session-qr session-qr-top"')}<div class="eyebrow">LET’S BUILD WHAT’S NEXT</div><h2>${esc(receipt.appName)}</h2><dl>${cardFields(receipt).map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl></div><div class="download-card-foot"><strong>Card reference · ${esc(receipt.id.slice(0,8).toUpperCase())}</strong><span>Reserved with MCCIA Applied AI Studio.</span></div></article><div class="card-actions"><button id="download-card" class="primary">Download card (PNG) ↓</button><a class="text-button" href="#/session/${receipt.id}">View session →</a><a class="text-button" href="#/apps/${a.id}/details">Edit details</a></div><p id="card-download-status" role="status"></p><p class="card-privacy-note">This card image is only saved to your device when you download it.</p><p class="progress-link"><a class="text-button" href="#/progress">See everyone’s progress →</a> · <a class="text-button" href="#/my-bookings">See all my bookings →</a></p><a class="back" href="#/apps">← Explore applications</a></div>`;
  root.querySelector('#download-card').onclick=async e=>{const button=e.currentTarget;button.disabled=true;button.textContent='Preparing your card…';try{await downloadSessionCard(receipt);root.querySelector('#card-download-status').textContent='Download started. Your session card is ready to save.'}catch{root.querySelector('#card-download-status').textContent='The download could not be created. Please try again.'}finally{button.disabled=false;button.textContent='Download card (PNG) ↓'}};
 }
 async function downloadSessionCard(r){
@@ -154,7 +154,8 @@ async function downloadSessionCard(r){
  ctx.fillStyle='#fff';ctx.font='800 39px Manrope, sans-serif';ctx.fillText('MCCIA',pad,85);ctx.fillStyle='#c6b8ff';ctx.font='600 19px Manrope, sans-serif';ctx.fillText('APPLIED AI STUDIO',pad,125);ctx.fillStyle='#d0ffa7';ctx.font='700 24px Manrope, sans-serif';ctx.fillText('SESSION RESERVED',pad,187);
  ctx.fillStyle='#fff';ctx.fillRect(35,260,width-70,height-395);
  let y=318;
- for(const row of rows){ctx.fillStyle='#788093';ctx.font='500 19px Manrope, sans-serif';ctx.fillText(row.label.toUpperCase(),pad,y);y+=37;ctx.fillStyle='#232b40';ctx.font='600 31px Manrope, sans-serif';for(const line of row.lines){ctx.fillText(line,pad,y);y+=39}ctx.strokeStyle='#e5e6ed';ctx.beginPath();ctx.moveTo(pad,y+8);ctx.lineTo(width-pad,y+8);ctx.stroke();y+=35;}
+ // QR drawn first, matching the on-screen confirmation card where it now appears above the
+ // detail fields rather than below them.
  if(qrImg){
   ctx.fillStyle='#5a42be';ctx.font='700 20px Manrope, sans-serif';ctx.textAlign='center';ctx.fillText('SCAN TO VIEW YOUR SESSION',width/2,y+QR_LABEL_H-14);ctx.textAlign='left';
   y+=QR_LABEL_H+QR_GAP;
@@ -162,7 +163,9 @@ async function downloadSessionCard(r){
   y+=qrImg.width+QR_GAP;
   ctx.fillStyle='#788093';ctx.font='500 15px Manrope, sans-serif';ctx.textAlign='center';ctx.fillText("Scan to open your session's live progress page.",width/2,y+QR_CAPTION_H-30);ctx.textAlign='left';
   y+=QR_CAPTION_H;
+  ctx.strokeStyle='#e5e6ed';ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(width-pad,y);ctx.stroke();y+=35;
  }
+ for(const row of rows){ctx.fillStyle='#788093';ctx.font='500 19px Manrope, sans-serif';ctx.fillText(row.label.toUpperCase(),pad,y);y+=37;ctx.fillStyle='#232b40';ctx.font='600 31px Manrope, sans-serif';for(const line of row.lines){ctx.fillText(line,pad,y);y+=39}ctx.strokeStyle='#e5e6ed';ctx.beginPath();ctx.moveTo(pad,y+8);ctx.lineTo(width-pad,y+8);ctx.stroke();y+=35;}
  ctx.fillStyle='#5a42be';ctx.font='700 22px Manrope, sans-serif';ctx.fillText('CARD REFERENCE · '+r.id.slice(0,8).toUpperCase(),pad,height-83);ctx.fillStyle='#677183';ctx.font='500 20px Manrope, sans-serif';ctx.fillText('Reserved with MCCIA Applied AI Studio.',pad,height-43);
  const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(Error('Could not create PNG')),'image/png'));
  const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`MCCIA-${r.appId}-${r.date}-${r.id.slice(0,8)}.png`;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
@@ -417,7 +420,10 @@ function todayISO(){return new Date(Date.now()+19800000).toISOString().slice(0,1
 // of the studio's two allocated weeks at a time.
 function weekStartOf(dateStr){const d=new Date(dateStr+'T00:00:00Z');const day=(d.getUTCDay()+6)%7;d.setUTCDate(d.getUTCDate()-day);return d.toISOString().slice(0,10);}
 function computeStageCounts(sessions){const counts={'Not Started':0,'In Progress':0,'Completed':0};for(const s of sessions)counts[s.progressStage]=(counts[s.progressStage]||0)+1;return counts;}
-function statsGridHTML(sessions){const counts=computeStageCounts(sessions);return `<div class="stats-grid">
+// Just the four counts as label\tvalue lines -- deliberately separate from the Sessions tab's
+// "Copy table" (which includes names/phone/email) since this grid is summary numbers only.
+function statsGridTSV(sessions){const counts=computeStageCounts(sessions);return [['Total bookings',sessions.length],['Not Started',counts['Not Started']],['In Progress',counts['In Progress']],['Completed',counts['Completed']]].map(([label,value])=>label+'\t'+value).join('\n')}
+function statsGridHTML(sessions){const counts=computeStageCounts(sessions);return `<div class="stats-toolbar"><button type="button" class="text-button" id="copy-stats">Copy numbers ⧉</button><span class="copy-status" id="copy-stats-status" role="status"></span></div><div class="stats-grid">
  <div class="stat-card"><span class="stat-value">${sessions.length}</span><span class="stat-label">Total bookings</span></div>
  <div class="stat-card"><span class="stat-value" style="color:#6647eb">${counts['Not Started']}</span><span class="stat-label">Not started</span></div>
  <div class="stat-card"><span class="stat-value" style="color:#a5720b">${counts['In Progress']}</span><span class="stat-label">In progress</span></div>
@@ -508,6 +514,12 @@ root.querySelector('#copy-sessions-table')?.addEventListener('click',async()=>{
  const status=root.querySelector('#copy-sessions-status');
  try{await navigator.clipboard.writeText(sessionsTableTSV());status.textContent='Copied — paste into Excel or Sheets.'}
  catch{status.textContent='Could not copy automatically. Select the table and copy manually.'}
+ setTimeout(()=>{if(status)status.textContent=''},4000);
+});
+root.querySelector('#copy-stats')?.addEventListener('click',async()=>{
+ const status=root.querySelector('#copy-stats-status');
+ try{await navigator.clipboard.writeText(statsGridTSV(editorSessions));status.textContent='Copied.'}
+ catch{status.textContent='Could not copy automatically.'}
  setTimeout(()=>{if(status)status.textContent=''},4000);
 });
 root.querySelectorAll('[data-view-mode]').forEach(b=>b.onclick=()=>{calendarViewMode=b.dataset.viewMode;editor()});
