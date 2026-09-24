@@ -130,3 +130,19 @@ button.danger:disabled{opacity:.6;cursor:default}
 /* Admin Sessions table: copy-to-clipboard for reporting */
 .sessions-toolbar{display:flex;align-items:center;gap:10px;margin:10px 0}
 .copy-status{font-size:12px;color:#1e8a4c}
+
+/* Everyone's progress (#/progress): grid of company cards, click to expand. Cards sit in normal
+   grid flow, so an expanded card's extra height naturally reflows the cards after it -- no
+   absolute positioning or JS layout math needed. */
+.progress-view{max-width:920px}
+.progress-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:22px;align-items:start}
+.progress-company-card{border:1px solid #e2e5ed;border-radius:12px;background:#fff;overflow:hidden}
+.progress-company-toggle{width:100%;display:flex;align-items:center;gap:10px;padding:14px 16px;background:#fff;border:0;font:inherit;text-align:left;cursor:pointer}
+.progress-company-card.expanded .progress-company-toggle{background:#f7f5ff}
+.progress-company-name{font-weight:650;font-size:14px;overflow-wrap:anywhere}
+.progress-company-count{font-size:12px;color:#7d8492;margin-left:auto;white-space:nowrap}
+.progress-app-list{list-style:none;margin:0;padding:0 16px 12px}
+.progress-app-list li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #eef0f4}
+.progress-app-name{flex:1;font-size:13px;overflow-wrap:anywhere}
+.progress-app-percent{font-size:12px;color:#7d8492;min-width:36px;text-align:right}
+@media(max-width:560px){.progress-grid{grid-template-columns:1fr}}

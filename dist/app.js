@@ -270,22 +270,45 @@ function renderMemberView(){
 }
 
 // ---- Shared progress view (#/progress) -- public, company + application only, never names ----
-let progressList=null,progressError='',progressLoading=false;
+let progressList=null,progressError='',progressLoading=false,progressExpanded=new Set();
 async function progressView(){
  document.title='Everyone’s progress | MCCIA AI Studio';
- progressLoading=true;progressError='';renderProgressView();
+ progressLoading=true;progressError='';progressExpanded=new Set();renderProgressView();
  try{progressList=(await api('progress')).sessions}
  catch(e){progressError=e.message}
  finally{progressLoading=false;renderProgressView()}
 }
+// Groups the flat session list by company so each company shows as one card in the grid,
+// listing every application they've booked with that application's own stage/percent.
+function groupProgressByCompany(list){
+ const byCompany=new Map();
+ for(const s of list){const key=s.company||'—';if(!byCompany.has(key))byCompany.set(key,[]);byCompany.get(key).push(s)}
+ return [...byCompany.entries()].sort(([a],[b])=>a.localeCompare(b));
+}
 function renderProgressView(){
- root.innerHTML=`<div class="container session-view"><div class="finish-header"><div class="eyebrow">MCCIA APPLIED AI STUDIO</div><h1>Everyone’s progress</h1><p>See how other MSMEs are progressing through their sessions.</p></div>${
+ const groups=progressList?groupProgressByCompany(progressList):[];
+ root.innerHTML=`<div class="container progress-view"><div class="finish-header"><div class="eyebrow">MCCIA APPLIED AI STUDIO</div><h1>Everyone’s progress</h1><p>See how other MSMEs are progressing through their sessions.</p></div>${
   progressLoading?'<p role="status">Loading…</p>'
   :progressError?`<p class="error" role="alert">${esc(progressError)}</p>`
   :!progressList?''
-  :progressList.length?`<div class="sessions-table-wrap"><table class="sessions-table"><thead><tr><th>Company</th><th>Application</th><th>Stage</th><th>%</th></tr></thead><tbody>${progressList.map(s=>`<tr><td>${esc(s.company||'—')}</td><td>${esc(s.appName)}</td><td><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span></td><td>${s.progressPercent}%</td></tr>`).join('')}</tbody></table></div>`
+  :groups.length?`<div class="progress-grid">${groups.map(([company,apps])=>{
+   const expanded=progressExpanded.has(company);
+   return `<div class="progress-company-card ${expanded?'expanded':''}">
+    <button type="button" class="progress-company-toggle" data-company="${esc(company)}" aria-expanded="${expanded}">
+     <span class="progress-company-name">${esc(company)}</span>
+     <span class="progress-company-count">${apps.length} ${apps.length===1?'application':'applications'}</span>
+     <span class="calendar-day-arrow" aria-hidden="true">${expanded?'▲':'▼'}</span>
+    </button>
+    ${expanded?`<ul class="progress-app-list">${apps.map(s=>`<li><span class="progress-app-name">${esc(s.appName)}</span><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span><span class="progress-app-percent">${s.progressPercent}%</span></li>`).join('')}</ul>`:''}
+   </div>`;
+  }).join('')}</div>`
   :'<p>No sessions yet.</p>'
  }<a class="back" href="#/apps">← Explore applications</a></div>`;
+ root.querySelectorAll('[data-company]').forEach(b=>b.onclick=()=>{
+  const company=b.dataset.company;
+  if(progressExpanded.has(company))progressExpanded.delete(company);else progressExpanded.add(company);
+  renderProgressView();
+ });
 }
 
 // ---- Shared attendance/progress edit form (used by the admin edit page AND the QR/public
