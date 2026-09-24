@@ -78,6 +78,7 @@
 /* Dashboard redesign: stats grid, day/week/all toggle, clickable booking chips, detail modal.
    Kept deliberately compact (small gaps/padding) -- this tab is scanned, not read, and dense
    spacing lets more of the day's bookings show without scrolling. */
+.editor-shell{max-width:1400px}
 .editor-board{padding:20px}
 .stats-toolbar{display:flex;align-items:center;gap:10px;margin:8px 0 0}
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0 4px}

@@ -78,30 +78,48 @@ function doPost(e) {
 const TIME_LABELS = { '11:00': '11:00 AM – 12:00 PM', '14:30': '2:30 PM – 3:30 PM', '15:30': '3:30 PM – 4:30 PM' };
 
 /**
- * Sends a booking confirmation (default) or reschedule notice (b.type === 'reschedule') email to
- * the VISITOR ONLY (not the studio) -- best-effort from GetMyApp's side: a failure here is logged
- * by the caller and never blocks or fails the booking/reschedule itself. Sent from whichever
- * Google account this Apps Script project is deployed under ("Execute as: Me" in the deployment
- * settings).
+ * Sends one of three emails depending on b.type:
+ *  - (default/undefined): booking confirmation to the VISITOR.
+ *  - 'reschedule': reschedule notice to the VISITOR.
+ *  - 'studio-notification': new-booking notice to the STUDIO (GetMyApp's STUDIO_NOTIFICATION_EMAIL
+ *    env var), including every field the studio would want -- phone, email, company, member ID --
+ *    unlike the visitor-facing emails, which never include another visitor's contact details.
+ * Best-effort from GetMyApp's side in every case: a failure here is logged by the caller and never
+ * blocks or fails the booking/reschedule itself. Sent from whichever Google account this Apps
+ * Script project is deployed under ("Execute as: Me" in the deployment settings).
  */
 function sendBookingEmail(b) {
   try {
     if (!b.to) return jsonResponse({ success: false, error: 'MISSING_RECIPIENT' });
     const dateLabel = formatDateLabel(b.date);
     const timeLabel = TIME_LABELS[b.slot] || b.slot || '';
-    const isReschedule = b.type === 'reschedule';
-    const subject = isReschedule
-      ? 'Your MCCIA Applied AI Studio session has a new date/time — ' + (b.appName || '')
-      : 'Your MCCIA Applied AI Studio session is confirmed — ' + (b.appName || '');
-    const body = 'Hi ' + (b.name || 'there') + ',\n\n' +
-      (isReschedule
-        ? 'Your session at MCCIA Applied AI Studio has been rescheduled. The new details are:\n\n'
-        : 'Your session at MCCIA Applied AI Studio is reserved:\n\n') +
-      'Application: ' + (b.appName || '') + '\n' +
-      'Date: ' + dateLabel + '\n' +
-      'Time: ' + timeLabel + ' IST\n\n' +
-      'See you at the studio!\n\n' +
-      'MCCIA Applied AI Studio';
+    let subject, body;
+    if (b.type === 'studio-notification') {
+      subject = 'New booking — ' + (b.appName || '') + ' · ' + (b.name || '');
+      body = 'A new session was booked at MCCIA Applied AI Studio:\n\n' +
+        'Participant: ' + (b.name || '') + '\n' +
+        'Company: ' + (b.company || '') + '\n' +
+        'Member ID: ' + (b.memberId || '') + '\n' +
+        'Phone: ' + (b.phone || '') + '\n' +
+        'Email: ' + (b.email || '') + '\n' +
+        'Application: ' + (b.appName || '') + '\n' +
+        'Date: ' + dateLabel + '\n' +
+        'Time: ' + timeLabel + ' IST\n';
+    } else {
+      const isReschedule = b.type === 'reschedule';
+      subject = isReschedule
+        ? 'Your MCCIA Applied AI Studio session has a new date/time — ' + (b.appName || '')
+        : 'Your MCCIA Applied AI Studio session is confirmed — ' + (b.appName || '');
+      body = 'Hi ' + (b.name || 'there') + ',\n\n' +
+        (isReschedule
+          ? 'Your session at MCCIA Applied AI Studio has been rescheduled. The new details are:\n\n'
+          : 'Your session at MCCIA Applied AI Studio is reserved:\n\n') +
+        'Application: ' + (b.appName || '') + '\n' +
+        'Date: ' + dateLabel + '\n' +
+        'Time: ' + timeLabel + ' IST\n\n' +
+        'See you at the studio!\n\n' +
+        'MCCIA Applied AI Studio';
+    }
     MailApp.sendEmail({ to: b.to, subject: subject, body: body });
     return jsonResponse({ success: true });
   } catch (err) {
@@ -265,4 +283,37 @@ function testSendBookingEmail() {
   const fakeEvent = { postData: { contents: JSON.stringify(payload) } };
   const response = doPost(fakeEvent);
   console.log('testSendBookingEmail response: ' + response.getContent());
+}
+
+/**
+ * TEST HARNESS -- run this from the Apps Script editor to verify the studio's own new-booking
+ * notification email sends. Edit the `to` address below (your STUDIO_NOTIFICATION_EMAIL) before
+ * running. Check the execution log and that inbox afterward.
+ */
+function testSendStudioNotification() {
+  const props = PropertiesService.getScriptProperties();
+  const secret = props.getProperty('GETMYAPP_WEBHOOK_SECRET');
+  if (!secret) {
+    console.log('Set the GETMYAPP_WEBHOOK_SECRET script property before running this test.');
+    return;
+  }
+  const payload = {
+    secret: secret,
+    action: 'SEND_BOOKING_EMAIL',
+    booking: {
+      to: 'CHANGE_ME@example.com',
+      type: 'studio-notification',
+      name: 'Test Visitor',
+      phone: '+91 98765 43210',
+      email: 'visitor@example.com',
+      company: 'Test Co',
+      memberId: 'MCCIA-TEST-001',
+      appName: 'Stocklist',
+      date: '2026-10-01',
+      slot: '14:30'
+    }
+  };
+  const fakeEvent = { postData: { contents: JSON.stringify(payload) } };
+  const response = doPost(fakeEvent);
+  console.log('testSendStudioNotification response: ' + response.getContent());
 }

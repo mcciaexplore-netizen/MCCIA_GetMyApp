@@ -122,6 +122,46 @@ test('a booking still succeeds even if the confirmation email fails to send',asy
  db.close();
 });
 
+test('when STUDIO_NOTIFICATION_EMAIL is set, a booking also emails the studio with full contact details',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,...sheetsEnv,STUDIO_NOTIFICATION_EMAIL:'mcciaexplore@gmail.com'};
+ const sheets=mockSheetsFetch(true);
+ let res;
+ try{res=await worker.fetch(request('bookings','POST',booking),env)}
+ finally{sheets.restore()}
+ assert.equal(res.status,201);
+ assert.equal(sheets.calls.length,2); // visitor confirmation + studio notification
+ const studioCall=sheets.calls.map(c=>JSON.parse(c.options.body)).find(b=>b.booking.to==='mcciaexplore@gmail.com');
+ assert.ok(studioCall,'the studio must receive its own notification email');
+ assert.equal(studioCall.booking.type,'studio-notification');
+ assert.equal(studioCall.booking.name,booking.name);
+ assert.equal(studioCall.booking.phone,booking.phone);
+ assert.equal(studioCall.booking.email,booking.email.toLowerCase());
+ assert.equal(studioCall.booking.company,booking.company);
+ assert.equal(studioCall.booking.memberId,booking.memberId);
+ db.close();
+});
+
+test('without STUDIO_NOTIFICATION_EMAIL set, no studio notification is sent',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,...sheetsEnv};
+ const sheets=mockSheetsFetch(true);
+ let res;
+ try{res=await worker.fetch(request('bookings','POST',booking),env)}
+ finally{sheets.restore()}
+ assert.equal(res.status,201);
+ assert.equal(sheets.calls.length,1); // visitor confirmation only
+ db.close();
+});
+
+test('a booking still succeeds even if the studio notification email fails to send',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,...sheetsEnv,STUDIO_NOTIFICATION_EMAIL:'mcciaexplore@gmail.com'};
+ const sheets=mockSheetsFetch(false,'Simulated mail outage');
+ let res;
+ try{res=await worker.fetch(request('bookings','POST',booking),env)}
+ finally{sheets.restore()}
+ assert.equal(res.status,201);
+ db.close();
+});
+
 test('a successful booking automatically creates a session_progress row with correct defaults',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db);
  const res=await worker.fetch(request('bookings','POST',booking),{DB});

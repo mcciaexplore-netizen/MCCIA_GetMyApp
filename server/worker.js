@@ -283,6 +283,13 @@ export default {async fetch(request,env){
      // a visitor's reservation must not depend on an email provider being reachable.
      try{await sendBookingEmail(env,{to:b.email.trim().toLowerCase(),name:b.name.trim(),appName,date:b.date,slot:b.slot})}
      catch(emailErr){console.error('Booking confirmation email failed for',id,String(emailErr))}
+     // Best-effort notification to the studio, if configured. Unlike the visitor email, this one
+     // carries every field the studio would want (phone, email, company, member ID) -- it's an
+     // internal notice, not something shown to the visitor.
+     if(env.STUDIO_NOTIFICATION_EMAIL){
+      try{await sendBookingEmail(env,{to:env.STUDIO_NOTIFICATION_EMAIL,type:'studio-notification',name:b.name.trim(),phone:b.phone.trim(),email:b.email.trim().toLowerCase(),company:b.company.trim(),memberId:b.memberId.trim(),appName,date:b.date,slot:b.slot})}
+      catch(emailErr){console.error('Studio notification email failed for',id,String(emailErr))}
+     }
     }
     catch(e){if(String(e).includes('UNIQUE constraint'))return json({error:"You've already booked this application's session for this date and time."},409);throw e}
     return json({id,appId:b.appId,appName,date:b.date,slot:b.slot},201);
