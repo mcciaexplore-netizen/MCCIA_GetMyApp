@@ -78,6 +78,7 @@ const eventDates=[...new Set(Object.values(appSchedule).flat().map(({date})=>dat
 const times=['11:00','14:30','15:30'];
 let availabilityConfirmed=false;
 const timeLabels={'11:00':'11:00 AM – 12:00 PM','14:30':'2:30 PM – 3:30 PM','15:30':'3:30 PM – 4:30 PM'};
+const slotOptions=Object.keys(timeLabels);
 const dateLabel=d=>new Date(d+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:'Asia/Kolkata'});
 let availability=[],schedule=[],loading=false,bookingError='',receipt=null,bookingBusy=false,requestNumber=0,week=0,activeApp=null;
 let contact={name:'',phone:'',email:'',company:'',memberId:''};
@@ -130,7 +131,7 @@ function qrBlockHTML(url){
 function confirmed(a){
  if(!receipt||receipt.appId!==a.id){location.hash='#/apps';return}
  document.title='Your session card | MCCIA AI Studio';
- root.innerHTML=`<div class="session-result"><div class="finish-header"><div class="finish-check">✓</div><h1>Your session is reserved.</h1><p>Download your card and keep your selected session details together.</p></div><article class="download-card" aria-label="Your session request card"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">SESSION RESERVED</span></div><div class="download-card-body">${qrBlockHTML(sessionUrl(receipt.id)).replace('class="session-qr"','class="session-qr session-qr-top"')}<div class="eyebrow">LET’S BUILD WHAT’S NEXT</div><h2>${esc(receipt.appName)}</h2><dl>${cardFields(receipt).map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl></div><div class="download-card-foot"><strong>Card reference · ${esc(receipt.id.slice(0,8).toUpperCase())}</strong><span>Reserved with MCCIA Applied AI Studio.</span></div></article><div class="card-actions"><button id="download-card" class="primary">Download card (PNG) ↓</button><a class="text-button" href="#/session/${receipt.id}">View session →</a><a class="text-button" href="#/apps/${a.id}/details">Edit details</a></div><p id="card-download-status" role="status"></p><p class="card-privacy-note">This card image is only saved to your device when you download it.</p>${progressLinksHTML()}<a class="back" href="#/apps">← Explore applications</a></div>`;
+ root.innerHTML=`<div class="session-result"><div class="finish-header"><div class="finish-check">✓</div><h1>Your session is reserved.</h1><p>Download your card and keep your selected session details together.</p></div><article class="download-card" aria-label="Your session request card"><div class="download-card-head"><span>MCCIA <small>APPLIED AI STUDIO</small></span><span class="card-status">SESSION RESERVED</span></div><div class="download-card-body">${qrBlockHTML(sessionUrl(receipt.id)).replace('class="session-qr"','class="session-qr session-qr-top"')}<div class="eyebrow">LET’S BUILD WHAT’S NEXT</div><h2>${esc(receipt.appName)}</h2><dl>${cardFields(receipt).map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl></div><div class="download-card-foot"><strong>Card reference · ${esc(receipt.id.slice(0,8).toUpperCase())}</strong><span>Reserved with MCCIA Applied AI Studio.</span></div></article><div class="card-actions"><button id="download-card" class="primary">Download card (PNG) ↓</button><a class="text-button" href="#/session/${receipt.id}">View session →</a></div><p id="card-download-status" role="status"></p><p class="card-privacy-note">This card image is only saved to your device when you download it.</p>${progressLinksHTML()}<a class="back" href="#/apps">← Explore applications</a></div>`;
  root.querySelector('#download-card').onclick=async e=>{const button=e.currentTarget;button.disabled=true;button.textContent='Preparing your card…';try{await downloadSessionCard(receipt);root.querySelector('#card-download-status').textContent='Download started. Your session card is ready to save.'}catch{root.querySelector('#card-download-status').textContent='The download could not be created. Please try again.'}finally{button.disabled=false;button.textContent='Download card (PNG) ↓'}};
 }
 async function downloadSessionCard(r){
@@ -241,16 +242,21 @@ async function memberView(){
  renderMemberView();
 }
 function renderMemberView(){
- root.innerHTML=`<div class="container session-view"><div class="finish-header"><div class="eyebrow">MCCIA APPLIED AI STUDIO</div><h1>My bookings</h1><p>Enter the Member ID and email you used while booking to see every session you've reserved.</p></div>
+ root.innerHTML=`<div class="container my-bookings-view"><div class="finish-header"><div class="eyebrow">MCCIA APPLIED AI STUDIO</div><h1>My bookings</h1><p>Enter the Member ID and email you used while booking to see every session you've reserved.</p></div>
  <form id="member-lookup-form" class="member-lookup-form"><label>Member ID<input required maxlength="50" name="memberId" value="${esc(memberLookup.memberId)}" placeholder="Your MCCIA member ID"></label><label>Email address<input required type="email" maxlength="254" name="email" value="${esc(memberLookup.email)}" placeholder="you@company.com"></label><button class="primary" ${memberLoading?'disabled':''}>${memberLoading?'Searching…':'Show my bookings'}</button></form>
  ${memberError?`<p class="error" role="alert">${esc(memberError)}</p>`:''}
  ${!memberSearched||memberLoading?''
-  :!memberSessions?.length?'<p>No bookings found for that Member ID and email.</p>'
-  :`<div class="member-sessions-grid">${memberSessions.map(s=>`<a class="member-session-card" href="#/session/${s.id}">
-    <div class="member-session-app">${esc(s.appName)}</div>
-    <div class="member-session-when">${dateLabel(s.date)} · ${timeLabels[s.slot]||esc(s.slot)}</div>
-    <div class="member-session-status"><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span><span>${s.progressPercent}%</span></div>
-   </a>`).join('')}</div>`
+  :!memberSessions?.length?'<div class="my-bookings-empty"><p>No bookings found for that Member ID and email.</p><p>Double-check both fields match exactly what you entered while booking.</p></div>'
+  :`<div class="my-bookings-count">${memberSessions.length} ${memberSessions.length===1?'session':'sessions'} found</div><div class="member-sessions-grid">${memberSessions.map(s=>{const app=apps.find(a=>a.name===s.appName);return `<a class="member-session-card" href="#/session/${s.id}" style="--app-accent:${app?.bg||'#6647eb'}">
+    <div class="member-session-symbol" aria-hidden="true">${app?.symbol||'✳'}</div>
+    <div class="member-session-body">
+     <div class="member-session-app">${esc(s.appName)}</div>
+     <div class="member-session-when">${dateLabel(s.date)} · ${timeLabels[s.slot]||esc(s.slot)}</div>
+     <div class="member-session-status"><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span><span class="member-session-percent">${s.progressPercent}%</span></div>
+     ${progressBar(s.progressPercent)}
+    </div>
+    <span class="member-session-arrow" aria-hidden="true">→</span>
+   </a>`}).join('')}</div>`
  }
  <a class="back" href="#/apps">← Explore applications</a></div>`;
  root.querySelector('#member-lookup-form').onsubmit=async e=>{
@@ -431,7 +437,10 @@ function renderEditorSessionView(bookingId){
 }
 
 let editorToken='',editorDate='',editorMessage='',editorSlots=null;
-let editorTab='sessions',editorSessions=null,editorSessionsError='',editorSessionsLoading=false;
+let scheduleApps=null,scheduleAppsLoading=false;
+let newSlotForm={appId:'',date:'',slot:'11:00'},newSlotBusy=false,newSlotError='',newSlotMessage='';
+async function loadScheduleApps(){scheduleAppsLoading=true;editor();try{scheduleApps=await api('editor-schedule',{headers:{Authorization:'Bearer '+editorToken}})}catch(e){editorMessage=e.message}finally{scheduleAppsLoading=false;editor()}}
+let editorTab='dashboard',editorSessions=null,editorSessionsError='',editorSessionsLoading=false;
 let calendarViewMode='all',calendarSelectedDate='',calendarModalId=null;
 const attendanceStyles={'Not Marked':'background:#f1eefb;color:#6647eb','Present':'background:#e6f7ec;color:#1e8a4c','Absent':'background:#fdeceb;color:#c23b34'};
 const stageStyles={'Not Started':'background:#f1eefb;color:#6647eb','In Progress':'background:#fff6df;color:#a5720b','Completed':'background:#e6f7ec;color:#1e8a4c'};
@@ -443,7 +452,7 @@ function computeStageCounts(sessions){const counts={'Not Started':0,'In Progress
 // Just the four counts as label\tvalue lines -- deliberately separate from the Sessions tab's
 // "Copy table" (which includes names/phone/email) since this grid is summary numbers only.
 function statsGridTSV(sessions){const counts=computeStageCounts(sessions);return [['Total bookings',sessions.length],['Not Started',counts['Not Started']],['In Progress',counts['In Progress']],['Completed',counts['Completed']]].map(([label,value])=>label+'\t'+value).join('\n')}
-function statsGridHTML(sessions){const counts=computeStageCounts(sessions);return `<div class="stats-toolbar"><button type="button" class="text-button" id="copy-stats">Copy numbers ⧉</button><span class="copy-status" id="copy-stats-status" role="status"></span></div><div class="stats-grid">
+function statsGridHTML(sessions){const counts=computeStageCounts(sessions);return `<div class="stats-toolbar"><button type="button" class="button-secondary" id="copy-stats">Copy ⧉</button><span class="copy-status" id="copy-stats-status" role="status"></span></div><div class="stats-grid">
  <div class="stat-card stat-card-total"><span class="stat-value">${sessions.length}</span><span class="stat-label">Total bookings</span></div>
  <div class="stat-card stat-card-not-started"><span class="stat-value">${counts['Not Started']}</span><span class="stat-label">Not started</span></div>
  <div class="stat-card stat-card-in-progress"><span class="stat-value">${counts['In Progress']}</span><span class="stat-label">In progress</span></div>
@@ -488,12 +497,38 @@ function calendarModalHTML(){
    :''}
  </div></div>`;
 }
-function availabilityPanelHTML(){return `<div class="editor-toolbar"><label>Choose a date<select id="editor-date"><option value="">Select a scheduled date</option>${eventDates.map(date=>`<option value="${date}" ${date===editorDate?'selected':''}>${dateLabel(date)} 2026</option>`).join('')}</select></label></div><div class="editor-board">${editorSlots?`<div class="section-heading"><h2>${dateLabel(editorDate)}</h2><span>Changes apply to all applications</span></div><form id="editor-save"><div class="day-actions"><button type="button" data-day-action="show">Show day</button><button type="button" data-day-action="hide">Hide day</button><button type="button" data-day-action="activate">Activate day</button><button type="button" data-day-action="deactivate">Deactivate day</button></div><div class="editor-row editor-table-head"><span>One-hour session</span><span>Display</span><span>Active</span></div>${editorSlots.map(s=>`<div class="editor-row"><strong>${timeLabels[s.time]}</strong><label><input type="checkbox" data-visible="${s.time}" ${s.visible?'checked':''} aria-label="Display ${timeLabels[s.time]}"><span>Show</span></label><label><input type="checkbox" data-active="${s.time}" ${s.active?'checked':''} ${s.booked?'disabled':''} aria-label="Activate ${timeLabels[s.time]}"><span>${s.booked?'Booked':'Bookable'}</span></label></div>`).join('')}<p>Hidden slots do not appear to visitors. Inactive slots remain visible but cannot be booked. Existing bookings are preserved.</p><button class="primary">Save availability ✓</button></form>`:'<p>Select a scheduled date to manage its three session slots.</p>'}</div>`}
+function newSlotFormHTML(){
+ const dates=scheduleApps?.dates||eventDates;
+ return `<div class="editor-board">
+  <div class="section-heading"><h2>Add a new date &amp; slot</h2><span>For a specific application</span></div>
+  <p>Adds one more bookable session for the application you choose, alongside its existing schedule. It shows up immediately for visitors.</p>
+  <form id="new-slot-form" class="reschedule-form">
+   <select name="appId" required ${scheduleAppsLoading?'disabled':''}><option value="">Choose an application…</option>${(scheduleApps?.apps||[]).map(a=>`<option value="${a.id}" ${newSlotForm.appId===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select>
+   <input type="date" name="date" required value="${esc(newSlotForm.date)}" min="${todayISO()}">
+   <select name="slot" required>${slotOptions.map(t=>`<option value="${t}" ${newSlotForm.slot===t?'selected':''}>${timeLabels[t]||t}</option>`).join('')}</select>
+   <button class="primary" ${newSlotBusy?'disabled':''}>${newSlotBusy?'Adding…':'Add slot'}</button>
+  </form>
+  ${newSlotError?`<p class="error" role="alert">${esc(newSlotError)}</p>`:''}
+  ${newSlotMessage?`<p class="editor-message" role="status">${esc(newSlotMessage)}</p>`:''}
+ </div>`;
+}
+function availabilityPanelHTML(){
+ const dates=scheduleApps?.dates||eventDates;
+ return `${newSlotFormHTML()}<div class="editor-toolbar"><label>Choose a date<select id="editor-date"><option value="">Select a scheduled date</option>${dates.map(date=>`<option value="${date}" ${date===editorDate?'selected':''}>${dateLabel(date)} 2026</option>`).join('')}</select></label></div><div class="editor-board">${editorSlots?`<div class="section-heading"><h2>${dateLabel(editorDate)}</h2><span>Changes apply to all applications</span></div><form id="editor-save"><div class="day-actions"><button type="button" data-day-action="show">Show day</button><button type="button" data-day-action="hide">Hide day</button><button type="button" data-day-action="activate">Activate day</button><button type="button" data-day-action="deactivate">Deactivate day</button></div><div class="editor-row editor-table-head"><span>One-hour session</span><span>Display</span><span>Active</span></div>${editorSlots.map(s=>`<div class="editor-row"><strong>${timeLabels[s.time]}</strong><label><input type="checkbox" data-visible="${s.time}" ${s.visible?'checked':''} aria-label="Display ${timeLabels[s.time]}"><span>Show</span></label><label><input type="checkbox" data-active="${s.time}" ${s.active?'checked':''} ${s.booked?'disabled':''} aria-label="Activate ${timeLabels[s.time]}"><span>${s.booked?'Booked':'Bookable'}</span></label></div>`).join('')}<p>Hidden slots do not appear to visitors. Inactive slots remain visible but cannot be booked. Existing bookings are preserved.</p><button class="primary">Save availability ✓</button></form>`:'<p>Select a scheduled date to manage its three session slots.</p>'}</div>`}
 const sessionsTableColumns=[['Member ID',s=>s.memberId],['Participant',s=>s.name],['Phone',s=>s.phone],['Email',s=>s.email],['Application',s=>s.appName],['Date',s=>dateLabel(s.date)],['Time',s=>timeLabels[s.slot]||s.slot],['Company',s=>s.company||''],['Attendance',s=>s.attendance],['Hours',s=>s.hoursCompleted],['Stage',s=>s.progressStage],['%',s=>s.progressPercent]];
 // Builds a tab-separated block (header row + one row per booking) so pasting into Excel/Sheets
 // lands each field in its own column -- the standard clipboard format spreadsheets expect.
 function sessionsTableTSV(){return [sessionsTableColumns.map(([label])=>label).join('\t'),...editorSessions.map(s=>sessionsTableColumns.map(([,get])=>String(get(s)??'')).join('\t'))].join('\n')}
-function sessionsPanelHTML(){return `<div class="editor-board"><div class="section-heading"><h2>Sessions</h2><span>${editorSessions?editorSessions.length+' total':''}</span></div>${editorSessionsLoading?'<p role="status">Loading sessions…</p>':''}${editorSessionsError?`<p class="error" role="alert">${esc(editorSessionsError)} <button type="button" id="retry-sessions">Try again</button></p>`:''}${editorSessions&&!editorSessionsLoading?(editorSessions.length?`<div class="sessions-toolbar"><button type="button" class="text-button" id="copy-sessions-table">Copy table for reporting ⧉</button><span class="copy-status" id="copy-sessions-status" role="status"></span></div><div class="sessions-table-wrap"><table class="sessions-table"><thead><tr>${sessionsTableColumns.map(([label])=>`<th>${label}</th>`).join('')}<th></th></tr></thead><tbody>${editorSessions.map(s=>`<tr><td>${esc(s.memberId||'—')}</td><td>${esc(s.name)}</td><td>${esc(s.phone||'—')}</td><td>${esc(s.email||'—')}</td><td>${esc(s.appName)}</td><td>${dateLabel(s.date)}</td><td>${timeLabels[s.slot]||esc(s.slot)}</td><td>${esc(s.company||'—')}</td><td><span class="status-pill" style="${attendanceStyles[s.attendance]||''}">${esc(s.attendance)}</span></td><td>${s.hoursCompleted}</td><td><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span></td><td>${s.progressPercent}%</td><td><a class="text-button" href="#/editor/session/${s.id}">View session</a></td></tr>`).join('')}</tbody></table></div>`:'<p>No bookings yet.</p>'):''}</div>`}
+function sessionsPanelHTML(){return `<div class="editor-board"><div class="section-heading"><h2>Sessions</h2><span>${editorSessions?editorSessions.length+' total':''}</span></div>${editorSessionsLoading?'<p role="status">Loading sessions…</p>':''}${editorSessionsError?`<p class="error" role="alert">${esc(editorSessionsError)} <button type="button" id="retry-sessions">Try again</button></p>`:''}${editorSessions&&!editorSessionsLoading?(editorSessions.length?`<div class="sessions-toolbar"><button type="button" class="button-secondary" id="copy-sessions-table">Copy ⧉</button><span class="copy-status" id="copy-sessions-status" role="status"></span></div><div class="sessions-table-wrap"><table class="sessions-table sessions-table-compact"><thead><tr><th>Participant</th><th>Contact</th><th>Application</th><th>When</th><th>Company</th><th>Attendance</th><th>Progress</th><th></th></tr></thead><tbody>${editorSessions.map(s=>`<tr>
+ <td><div class="cell-stack"><strong>${esc(s.name)}</strong><small>${esc(s.memberId||'—')}</small></div></td>
+ <td><div class="cell-stack"><small>${esc(s.phone||'—')}</small><small>${esc(s.email||'—')}</small></div></td>
+ <td>${esc(s.appName)}</td>
+ <td><div class="cell-stack"><span>${dateLabel(s.date)}</span><small>${timeLabels[s.slot]||esc(s.slot)}</small></div></td>
+ <td>${esc(s.company||'—')}</td>
+ <td><span class="status-pill" style="${attendanceStyles[s.attendance]||''}">${esc(s.attendance)}</span></td>
+ <td><div class="cell-stack"><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span><small>${s.progressPercent}% · ${s.hoursCompleted}h</small></div></td>
+ <td><a class="button-secondary button-secondary-sm" href="#/editor/session/${s.id}">View →</a></td>
+</tr>`).join('')}</tbody></table></div>`:'<p>No bookings yet.</p>'):''}</div>`}
 function calendarPanelHTML(){
  if(!editorSessions)return `<div class="editor-board">${editorSessionsLoading?'<p role="status">Loading calendar…</p>':editorSessionsError?`<p class="error" role="alert">${esc(editorSessionsError)} <button type="button" id="retry-sessions">Try again</button></p>`:''}</div>`;
  const byDate=new Map();
@@ -528,8 +563,8 @@ async function loadEditorSessions(){editorSessionsLoading=true;editorSessionsErr
 function editor(){document.title='Studio access | MCCIA AI Studio';root.innerHTML=`<div class="editor-shell">${!editorToken?`<div class="eyebrow">STUDIO ACCESS</div><h1>Make room for what’s next.</h1><p>Manage the days and times people can book.</p><form id="editor-login" class="editor-login"><h2>Editor sign in</h2><p>Use your studio editor access key.</p><label>Access key<div class="password-field"><input type="password" name="key" required autocomplete="current-password" id="editor-key-input"><button type="button" id="toggle-key-visibility" aria-label="Show access key">Show</button></div></label><button class="primary">Sign in →</button></form>`:`<div class="editor-toolbar"><div class="eyebrow">GETMYAPP ADMIN</div><button class="text-button" id="sign-out">Sign out</button></div><div class="admin-nav" role="tablist">${[['dashboard','Dashboard'],['sessions','Sessions'],['availability','Availability']].map(([key,label])=>`<button type="button" class="admin-nav-item ${editorTab===key?'selected':''}" data-tab="${key}" role="tab" aria-selected="${editorTab===key}">${label}</button>`).join('')}</div>${editorTab==='availability'?availabilityPanelHTML():editorTab==='dashboard'?calendarPanelHTML():sessionsPanelHTML()}`}${editorMessage?`<p class="editor-message" role="status">${esc(editorMessage)}</p>`:''}</div>`;
 root.querySelector('#editor-login')?.addEventListener('submit',async e=>{e.preventDefault();const key=new FormData(e.target).get('key').trim();try{await api('editor-session',{headers:{Authorization:'Bearer '+key}});editorToken=key;editorMessage='';loadEditorSessions()}catch(e){editorMessage=e.message;editor()}});
 root.querySelector('#toggle-key-visibility')?.addEventListener('click',e=>{const input=root.querySelector('#editor-key-input'),btn=e.currentTarget;const showing=input.type==='text';input.type=showing?'password':'text';btn.textContent=showing?'Show':'Hide';btn.setAttribute('aria-label',showing?'Show access key':'Hide access key')});
-root.querySelector('#sign-out')?.addEventListener('click',()=>{editorToken='';editorSlots=null;editorSessions=null;editorTab='sessions';calendarViewMode='all';calendarSelectedDate='';calendarModalId=null;editorMessage='';editor()});
-root.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{editorTab=b.dataset.tab;if((editorTab==='sessions'||editorTab==='dashboard')&&!editorSessions)loadEditorSessions();else editor()});
+root.querySelector('#sign-out')?.addEventListener('click',()=>{editorToken='';editorSlots=null;editorSessions=null;editorTab='dashboard';calendarViewMode='all';calendarSelectedDate='';calendarModalId=null;editorMessage='';scheduleApps=null;newSlotForm={appId:'',date:'',slot:'11:00'};newSlotError='';newSlotMessage='';editor()});
+root.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{editorTab=b.dataset.tab;if((editorTab==='sessions'||editorTab==='dashboard')&&!editorSessions)loadEditorSessions();else if(editorTab==='availability'&&!scheduleApps)loadScheduleApps();else editor()});
 root.querySelector('#retry-sessions')?.addEventListener('click',()=>loadEditorSessions());
 root.querySelector('#copy-sessions-table')?.addEventListener('click',async()=>{
  const status=root.querySelector('#copy-sessions-status');
@@ -570,6 +605,20 @@ root.querySelector('#calendar-modal-delete-yes')?.addEventListener('click',async
   editorSessions=editorSessions.filter(r=>r.id!==id);
   calendarModalId=null;calendarModalDeleteBusy=false;calendarModalDeleteConfirming=false;editor();
  }catch(err){calendarModalDeleteBusy=false;calendarModalDeleteError=err.message;editor()}
+});
+root.querySelector('#new-slot-form')?.addEventListener('submit',async e=>{
+ e.preventDefault();
+ const fd=new FormData(e.target);
+ newSlotForm={appId:fd.get('appId'),date:fd.get('date'),slot:fd.get('slot')};
+ if(!newSlotForm.appId){newSlotError='Choose an application.';editor();return}
+ newSlotBusy=true;newSlotError='';newSlotMessage='';editor();
+ try{
+  const saved=await api('editor-schedule',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+editorToken},body:JSON.stringify(newSlotForm)});
+  scheduleApps={...scheduleApps,dates:saved.dates};
+  newSlotMessage=`Added ${dateLabel(newSlotForm.date)}, ${timeLabels[newSlotForm.slot]} for this application.`;
+  newSlotForm={...newSlotForm,date:''};
+ }catch(err){newSlotError=err.message}
+ finally{newSlotBusy=false;editor()}
 });
 root.querySelector('#editor-date')?.addEventListener('change',async e=>{editorDate=e.target.value;editorSlots=null;try{const r=await api('editor-availability?date='+editorDate,{headers:{Authorization:'Bearer '+editorToken}});editorSlots=r.slots;editorMessage='';}catch(e){editorMessage=e.message}editor()});root.querySelectorAll('[data-day-action]').forEach(b=>b.onclick=()=>{const action=b.dataset.dayAction;const attr=['show','hide'].includes(action)?'data-visible':'data-active';root.querySelectorAll('['+attr+']').forEach(input=>{if(!input.disabled)input.checked=['show','activate'].includes(action)});});root.querySelector('#editor-save')?.addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;const slots=editorSlots.map(s=>({time:s.time,visible:root.querySelector(`[data-visible="${s.time}"]`).checked,active:root.querySelector(`[data-active="${s.time}"]`).checked}));try{await api('editor-availability',{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+editorToken},body:JSON.stringify({date:editorDate,slots})});editorSlots=editorSlots.map(s=>({...s,...slots.find(r=>r.time===s.time)}));editorMessage='Availability saved. Visitors will see the updated schedule.'}catch(e){editorMessage=e.message}editor()});}
 function render(){requestNumber++;const parts=location.hash.slice(1).split('/').filter(Boolean);document.body.classList.toggle('is-landing',!parts.length);document.body.classList.toggle('is-booking',['book','details'].includes(parts[2]));document.body.classList.toggle('is-slot-page',parts[2]==='book');if(!parts.length)landing();else if(parts[0]==='progress')progressView();else if(parts[0]==='my-bookings')memberView();else if(parts[0]==='session'&&parts[1])sessionView(parts[1]);else if(parts[0]==='editor'&&parts[1]==='session'&&parts[2])editorSessionView(parts[2]);else if(parts[0]==='editor')editor();else if(parts[0]==='apps'&&parts.length===1)catalog();else{const a=apps.find(a=>a.id===parts[1]);if(a&&parts[0]==='apps'){if(activeApp?.id!==a.id){selectedDate=null;selectedSlot=null;schedule=[];availability=[];receipt=null;}activeApp=a;switch(parts[2]){case undefined:detail(a);break;case 'book':booking(a);if(!schedule.length)loadSchedule(a);break;case 'details':finalDetails(a);break;case 'confirmed':confirmed(a);break;default:location.hash='#/apps';}}else location.hash='#/apps';}window.scrollTo(0,0)}

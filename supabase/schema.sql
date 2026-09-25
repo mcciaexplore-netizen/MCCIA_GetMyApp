@@ -17,6 +17,17 @@ create table if not exists public.availability (
  date text not null, slot text not null, visible integer not null default 1 check(visible in (0,1)),
  active integer not null default 1 check(active in (0,1)), primary key(date,slot)
 );
+-- Admin-added dates/slots for an app, layered on top of the hardcoded appSchedule in
+-- server/worker.js (never replaces it) -- lets the studio add a new session for an app from the
+-- Availability page without a code change/redeploy for every schedule tweak.
+create table if not exists public.app_schedule_extra (
+ app_id text not null, date text not null, slot text not null,
+ created_at timestamptz not null default now(),
+ primary key(app_id, date, slot)
+);
+alter table public.app_schedule_extra enable row level security;
+revoke all on public.app_schedule_extra from anon, authenticated;
+grant all on public.app_schedule_extra to service_role;
 -- One session_progress row per booking. booking_id is both PK and FK, which structurally
 -- guarantees exactly one row per booking and cascades cleanup if a booking is ever deleted.
 -- Holds only operational/session data, never a copy of participant/application/date/etc. --

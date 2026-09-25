@@ -16,6 +16,16 @@ export const bookings = sqliteTable('bookings', {
 
 export const availability = sqliteTable('availability', {date: text('date').notNull(), slot: text('slot').notNull(), visible: integer('visible').notNull().default(1), active: integer('active').notNull().default(1)}, table => [uniqueIndex('idx_availability_date_slot').on(table.date, table.slot)]);
 
+// Admin-added dates/slots for an app, layered on top of the hardcoded appSchedule in
+// server/worker.js (never replaces it) -- lets the studio add a new session for an app from the
+// Availability page without a code change/redeploy for every schedule tweak.
+export const appScheduleExtra = sqliteTable('app_schedule_extra', {
+  appId: text('app_id').notNull(),
+  date: text('date').notNull(),
+  slot: text('slot').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, table => [uniqueIndex('idx_app_schedule_extra').on(table.appId, table.date, table.slot)]);
+
 // One row per booking (booking_id is the primary key), created automatically when a booking
 // is created. Holds only operational/session data, never a copy of participant/application/
 // date/etc. -- that stays on bookings.

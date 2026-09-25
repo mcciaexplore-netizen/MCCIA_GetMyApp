@@ -9,7 +9,7 @@ import {supabaseDatabase} from '../server/supabase.js';
 const now=new Date('2026-09-17T04:00:00Z');
 const booking={appId:'stocklist',date:'2026-10-01',slot:'14:30',name:'Test User',phone:'+91 98765 43210',email:'test@example.com',company:'Test',memberId:'MCCIA-1001'};
 const request=(path,method='GET',body,auth)=>new Request('https://studio.test/api/'+path,{method,headers:{Origin:'https://studio.test','Content-Type':'application/json',...(auth?{Authorization:'Bearer '+auth}:{})},...(body?{body:JSON.stringify(body)}:{})});
-function testDatabase(){const db=new DatabaseSync(':memory:');db.exec(fs.readFileSync('drizzle/0000_soft_ulik.sql','utf8'));db.exec(fs.readFileSync('drizzle/0001_sour_blonde_phantom.sql','utf8'));db.exec(fs.readFileSync('drizzle/0002_clever_kinsey_walden.sql','utf8'));return db}
+function testDatabase(){const db=new DatabaseSync(':memory:');db.exec(fs.readFileSync('drizzle/0000_soft_ulik.sql','utf8'));db.exec(fs.readFileSync('drizzle/0001_sour_blonde_phantom.sql','utf8'));db.exec(fs.readFileSync('drizzle/0002_clever_kinsey_walden.sql','utf8'));db.exec(fs.readFileSync('drizzle/0003_smart_bucky.sql','utf8'));return db}
 function databaseAdapter(db){return {async batch(statements){db.exec('BEGIN');try{for(const s of statements)await s.run();db.exec('COMMIT')}catch(e){db.exec('ROLLBACK');throw e}},prepare(sql){return{bind(...v){return{async all(){return{results:db.prepare(sql).all(...v)}},async run(){return db.prepare(sql).run(...v)}}}}}}}
 const bookingInsertSql='INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, member_id, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))';
 const editorKey='test-editor-key-with-at-least-32-characters';
@@ -95,6 +95,31 @@ test('editor settings and booking revalidation use the new time slots',async()=>
  settings.slots.find(s=>s.time==='14:30').active=true;
  assert.equal((await worker.fetch(request('editor-availability','PUT',settings,editorKey),env)).status,200);
  assert.equal((await worker.fetch(request('bookings','POST',booking),env)).status,201);
+ db.close();
+});
+
+test('admin can add a new date/slot for an app, which then becomes bookable and shows up everywhere the schedule is read',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
+ assert.equal((await worker.fetch(request('editor-schedule?appId=stocklist','POST',{appId:'stocklist',date:'2026-10-15',slot:'11:00'}),env)).status,401);
+ // Only one of the studio's 3 standard times is accepted, and only a today-or-future date.
+ assert.equal((await worker.fetch(request('editor-schedule?appId=stocklist','POST',{appId:'stocklist',date:'2026-10-15',slot:'09:00'},editorKey),env)).status,400);
+ assert.equal((await worker.fetch(request('editor-schedule?appId=stocklist','POST',{appId:'unknown-app',date:'2026-10-15',slot:'11:00'},editorKey),env)).status,400);
+ const created=await worker.fetch(request('editor-schedule','POST',{appId:'stocklist',date:'2026-10-15',slot:'11:00'},editorKey),env);
+ assert.equal(created.status,201);
+ const createdBody=await created.json();
+ assert.ok(createdBody.schedule.some(e=>e.date==='2026-10-15'&&e.slot==='11:00'&&e.custom===true));
+ assert.ok(createdBody.dates.includes('2026-10-15'));
+ // Adding the exact same date/slot again is rejected as a duplicate.
+ assert.equal((await worker.fetch(request('editor-schedule','POST',{appId:'stocklist',date:'2026-10-15',slot:'11:00'},editorKey),env)).status,409);
+ // The new date/slot is now visible to visitors through the normal public routes.
+ const schedule=await (await worker.fetch(request('schedule?appId=stocklist'),{DB})).json();
+ assert.ok(schedule.days.some(d=>d.date==='2026-10-15'));
+ const availability=await (await worker.fetch(request('availability?date=2026-10-15&appId=stocklist'),{DB})).json();
+ assert.deepEqual(availability.slots.map(s=>s.time),['11:00']);
+ assert.equal(availability.slots[0].available,true);
+ // And it's actually bookable end to end.
+ const res=await worker.fetch(request('bookings','POST',{...booking,date:'2026-10-15',slot:'11:00'}),{DB});
+ assert.equal(res.status,201);
  db.close();
 });
 
@@ -528,6 +553,12 @@ test('every public GET route resolves its queries against the real Supabase adap
   // POST, not a GET.
   const bookingRes=await worker.fetch(request('bookings','POST',booking),{DB});
   assert.notEqual(bookingRes.status,503,'POST bookings returned 503 -- likely an unsupported-query gap in supabase.js');
+  // app_schedule_extra's GET/POST branches likewise.
+  const editorEnv={DB,EDITOR_ACCESS_KEY:editorKey};
+  const scheduleGet=await worker.fetch(request('editor-schedule?appId=stocklist',undefined,undefined,editorKey),editorEnv);
+  assert.notEqual(scheduleGet.status,503,'GET editor-schedule returned 503 -- likely an unsupported-query gap in supabase.js');
+  const schedulePost=await worker.fetch(request('editor-schedule','POST',{appId:'stocklist',date:'2026-10-20',slot:'11:00'},editorKey),editorEnv);
+  assert.notEqual(schedulePost.status,503,'POST editor-schedule returned 503 -- likely an unsupported-mutation gap in supabase.js');
  }finally{global.fetch=original}
 });
 

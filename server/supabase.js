@@ -24,6 +24,8 @@ export function supabaseDatabase(env) {
    else if(sql==='SELECT 1 FROM bookings WHERE app_id = ? AND date = ? AND slot = ? AND email = ?')path='bookings?select=id&app_id=eq.'+encodeURIComponent(v[0])+'&date=eq.'+encodeURIComponent(v[1])+'&slot=eq.'+encodeURIComponent(v[2])+'&email=eq.'+encodeURIComponent(v[3]);
    else if(sql==='SELECT booking_id, attendance, progress_stage, progress_percent FROM session_progress')path='session_progress?select=booking_id,attendance,progress_stage,progress_percent';
    else if(sql==='SELECT booking_id, progress_stage, progress_percent FROM session_progress')path='session_progress?select=booking_id,progress_stage,progress_percent';
+   else if(sql==='SELECT date, slot FROM app_schedule_extra WHERE app_id = ?')path='app_schedule_extra?select=date,slot&app_id=eq.'+encodeURIComponent(v[0]);
+   else if(sql==='SELECT date FROM app_schedule_extra')path='app_schedule_extra?select=date';
    else throw Error('Unsupported query');
    return {results:await call(path)}
   },async run(){
@@ -48,6 +50,10 @@ export function supabaseDatabase(env) {
    if(sql==='DELETE FROM bookings WHERE id = ?'){
     const saved=await call('bookings?id=eq.'+encodeURIComponent(v[0]),{method:'DELETE',headers:{Prefer:'return=representation'}});
     return {meta:{changes:Array.isArray(saved)?saved.length:0}};
+   }
+   if(sql==='INSERT INTO app_schedule_extra (app_id, date, slot, created_at) VALUES (?, ?, ?, ?)'){
+    await call('app_schedule_extra',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({app_id:v[0],date:v[1],slot:v[2],created_at:v[3]})});
+    return {meta:{changes:1}};
    }
    throw Error('Unsupported mutation');
   },sql,values:v}}}}

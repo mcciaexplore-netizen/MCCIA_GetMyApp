@@ -37,8 +37,26 @@ export function isValidDate(date,now=new Date(),appId=null){
  const today=new Date(+now+19800000).toISOString().slice(0,10);
  return (appId?appSchedule[appId]?.some(entry=>entry.date===date):eventDates.includes(date))&&date>=today;
 }
-export function validateBooking(b,now=new Date()){
- if(!b||typeof b!=='object'||!validApps.has(b.appId)||!appSchedule[b.appId].some(entry=>entry.date===b.date&&entry.slot===b.slot)||!isValidDate(b.date,now,b.appId))return 'Please choose the scheduled date and time for this application.';
+function isFutureDate(date,now=new Date()){return date>=new Date(+now+19800000).toISOString().slice(0,10)}
+// Admin-added dates/slots (app_schedule_extra) layer on top of the hardcoded appSchedule above --
+// this never replaces it, just extends it per app, so the studio can add a new session date for
+// an app from the Availability page without a code change. Used everywhere a caller previously
+// read appSchedule[appId] directly.
+async function resolveAppSchedule(db,appId){
+ const extra=(await db.prepare('SELECT date, slot FROM app_schedule_extra WHERE app_id = ?').bind(appId).all()).results;
+ return [...(appSchedule[appId]||[]),...extra.map(r=>({date:r.date,slot:r.slot}))];
+}
+async function resolveEventDates(db){
+ const extra=(await db.prepare('SELECT date FROM app_schedule_extra').bind().all()).results;
+ return [...new Set([...eventDates,...extra.map(r=>r.date)])].sort();
+}
+async function isValidEventDate(db,date,now=new Date()){
+ if(!date)return false;
+ return (await resolveEventDates(db)).includes(date)&&isFutureDate(date,now);
+}
+export function validateBooking(b,now=new Date(),scheduleEntries){
+ const entries=scheduleEntries||(b&&appSchedule[b.appId]);
+ if(!b||typeof b!=='object'||!validApps.has(b.appId)||!entries?.some(entry=>entry.date===b.date&&entry.slot===b.slot)||!isFutureDate(b.date,now))return 'Please choose the scheduled date and time for this application.';
  if(+new Date(b.date+'T'+b.slot+':00+05:30')<=+now)return 'This slot has already started. Please choose a later slot.';
  if(typeof b.name!=='string'||b.name.trim().length<2||b.name.length>100)return 'Enter your full name (2–100 characters).';
  const phoneDigits=typeof b.phone==='string'?b.phone.replace(/\D/g,''):'';
@@ -142,8 +160,29 @@ export default {async fetch(request,env){
      const progressByBooking=new Map(progressRows.map(p=>[p.booking_id,p]));
      return json({sessions:bookingRows.map(b=>{const p=progressByBooking.get(b.id)||{};return {id:b.id,appId:b.app_id,name:b.name,phone:b.phone,email:b.email,appName:b.app_name,company:b.company,memberId:b.member_id,date:b.date,slot:b.slot,attendance:p.attendance||'Not Marked',hoursCompleted:p.hours_completed??0,progressStage:p.progress_stage||'Not Started',progressPercent:p.progress_percent??0,remarks:p.remarks||''}})});
     }
+    if(url.pathname==='/api/editor-schedule'&&request.method==='GET'){
+     const appId=url.searchParams.get('appId');
+     const dates=await resolveEventDates(db);
+     if(!appId)return json({apps:[...validApps].map(id=>({id,name:appNames[id]})),dates});
+     if(!validApps.has(appId))return json({error:'Choose a valid application.'},400);
+     const custom=(await db.prepare('SELECT date, slot FROM app_schedule_extra WHERE app_id = ?').bind(appId).all()).results;
+     const schedule=[...appSchedule[appId].map(e=>({...e,custom:false})),...custom.map(e=>({date:e.date,slot:e.slot,custom:true}))].sort((a,b)=>a.date.localeCompare(b.date)||a.slot.localeCompare(b.slot));
+     return json({schedule,dates});
+    }
+    if(url.pathname==='/api/editor-schedule'&&request.method==='POST'){
+     if(request.headers.get('Origin')!==url.origin)return json({error:'Use the studio editor page.'},403);
+     const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
+     if(!validApps.has(b.appId))return json({error:'Choose a valid application.'},400);
+     if(typeof b.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(b.date)||!isFutureDate(b.date))return json({error:'Choose today or a future date.'},400);
+     if(typeof b.slot!=='string'||!slots.includes(b.slot))return json({error:'Choose one of the studio\'s three session times.'},400);
+     const existing=await resolveAppSchedule(db,b.appId);
+     if(existing.some(e=>e.date===b.date&&e.slot===b.slot))return json({error:'This application already has a session at that date and time.'},409);
+     await db.prepare('INSERT INTO app_schedule_extra (app_id, date, slot, created_at) VALUES (?, ?, ?, ?)').bind(b.appId,b.date,b.slot,new Date().toISOString()).run();
+     const schedule=[...appSchedule[b.appId].map(e=>({...e,custom:false})),...(await db.prepare('SELECT date, slot FROM app_schedule_extra WHERE app_id = ?').bind(b.appId).all()).results.map(e=>({date:e.date,slot:e.slot,custom:true}))].sort((a,b2)=>a.date.localeCompare(b2.date)||a.slot.localeCompare(b2.slot));
+     return json({schedule,dates:await resolveEventDates(db)},201);
+    }
     if(url.pathname==='/api/editor-availability'&&request.method==='GET') {
-     const date=url.searchParams.get('date');if(!isValidDate(date))return json({error:'Choose one of the scheduled application dates.'},400);
+     const date=url.searchParams.get('date');if(!(await isValidEventDate(db,date)))return json({error:'Choose one of the scheduled application dates.'},400);
      const records=await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all();
      const bookings=await db.prepare('SELECT slot FROM bookings WHERE date = ?').bind(date).all();
      return json({slots:slots.map(time=>{const row=records.results.find(r=>r.slot===time);return {time,visible:row?!!row.visible:true,active:row?!!row.active:true,booked:bookings.results.some(r=>r.slot===time)}})});
@@ -151,7 +190,7 @@ export default {async fetch(request,env){
     if(url.pathname==='/api/editor-availability'&&request.method==='PUT'){
      if(request.headers.get('Origin')!==url.origin)return json({error:'Use the studio editor page.'},403);
      const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
-     if(!isValidDate(b.date)||!Array.isArray(b.slots)||b.slots.length!==slots.length||new Set(b.slots.map(s=>s.time)).size!==slots.length||b.slots.some(s=>!slots.includes(s.time)||typeof s.visible!=='boolean'||typeof s.active!=='boolean'))return json({error:'Invalid availability settings.'},400);
+     if(!(await isValidEventDate(db,b.date))||!Array.isArray(b.slots)||b.slots.length!==slots.length||new Set(b.slots.map(s=>s.time)).size!==slots.length||b.slots.some(s=>!slots.includes(s.time)||typeof s.visible!=='boolean'||typeof s.active!=='boolean'))return json({error:'Invalid availability settings.'},400);
      await db.batch(b.slots.map(s=>db.prepare('INSERT INTO availability (date, slot, visible, active) VALUES (?, ?, ?, ?) ON CONFLICT(date, slot) DO UPDATE SET visible=excluded.visible, active=excluded.active').bind(b.date,s.time,Number(s.visible),Number(s.active))));
      return json({saved:true});
     }
@@ -214,9 +253,11 @@ export default {async fetch(request,env){
      const bookingRows=(await db.prepare('SELECT app_id, app_name, name, company, email, member_id, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
      if(!bookingRows.length)return json({error:'Booking not found.'},404);
      const booking=bookingRows[0];
-     // Reschedule targets must still be one of the app's own scheduled date/time combinations --
-     // this is an admin override of WHICH slot a visitor holds, not a way to invent new ones.
-     if(typeof b.date!=='string'||typeof b.slot!=='string'||!appSchedule[booking.app_id]?.some(entry=>entry.date===b.date&&entry.slot===b.slot))return json({error:'Choose one of the scheduled date/time combinations for this application.'},400);
+     // Reschedule targets must still be one of the app's own scheduled date/time combinations
+     // (built-in or admin-added) -- this moves a visitor to a different existing slot, not a way
+     // to invent new ones (use POST /api/editor-schedule to add a new slot first).
+     const targetSchedule=await resolveAppSchedule(db,booking.app_id);
+     if(typeof b.date!=='string'||typeof b.slot!=='string'||!targetSchedule.some(entry=>entry.date===b.date&&entry.slot===b.slot))return json({error:'Choose one of the scheduled date/time combinations for this application.'},400);
      if(b.date===booking.date&&b.slot===booking.slot)return json({error:'That is already the current date and time.'},400);
      const progressRows=(await db.prepare('SELECT attendance, hours_completed, progress_stage, progress_percent, remarks, created_at FROM session_progress WHERE booking_id = ?').bind(bookingId).all()).results;
      if(!progressRows.length)return json({error:'Session not found.'},404);
@@ -273,7 +314,7 @@ export default {async fetch(request,env){
    }
    if(url.pathname==='/api/schedule'&&request.method==='GET'){
     const appId=url.searchParams.get('appId');if(!validApps.has(appId))return json({error:'Choose a valid application.'},400);
-    const entries=appSchedule[appId].filter(({date})=>isValidDate(date));if(!entries.length)return json({days:[]});
+    const entries=(await resolveAppSchedule(db,appId)).filter(({date})=>isFutureDate(date));if(!entries.length)return json({days:[]});
     // Some apps (e.g. minicrm) have more than one slot on the same date -- dedupe to one day
     // entry per date, since this endpoint feeds the day-picker, not the per-slot list (that's
     // /api/availability). A day counts as visible/active if ANY of its slots are.
@@ -286,13 +327,15 @@ export default {async fetch(request,env){
     return json({days});
    }
    if(url.pathname==='/api/availability'&&request.method==='GET'){
-    const date=url.searchParams.get('date'),appId=url.searchParams.get('appId');if(!validApps.has(appId)||!isValidDate(date,new Date(),appId))return json({error:'Choose an available date for this application.'},400);
+    const date=url.searchParams.get('date'),appId=url.searchParams.get('appId');if(!validApps.has(appId))return json({error:'Choose an available date for this application.'},400);
+    const appScheduleEntries=await resolveAppSchedule(db,appId);
+    if(!appScheduleEntries.some(e=>e.date===date)||!isFutureDate(date))return json({error:'Choose an available date for this application.'},400);
     // A slot is available when the editor's visible/active flags allow it, its time hasn't
     // passed, AND fewer than SESSION_CAPACITY people have already booked it for this app.
     const settings=(await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all()).results;
     const existingBookings=(await db.prepare('SELECT slot FROM bookings WHERE app_id = ? AND date = ?').bind(appId,date).all()).results;
     const bookedCounts={};for(const row of existingBookings)bookedCounts[row.slot]=(bookedCounts[row.slot]||0)+1;
-    return json({date,slots:appSchedule[appId].filter(entry=>entry.date===date).map(({slot})=>{
+    return json({date,slots:appScheduleEntries.filter(entry=>entry.date===date).map(({slot})=>{
      const visible=settings.find(r=>r.slot===slot)?.visible!==0,active=settings.find(r=>r.slot===slot)?.active!==0;
      const full=(bookedCounts[slot]||0)>=SESSION_CAPACITY;
      return {time:slot,visible,full,available:visible&&active&&!full&&+new Date(date+'T'+slot+':00+05:30')>Date.now()};
@@ -303,7 +346,7 @@ export default {async fetch(request,env){
     if(!request.headers.get('Content-Type')?.includes('application/json'))return json({error:'JSON required.'},415);
     const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);
     let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
-    const error=validateBooking(b);if(error)return json({error},400);
+    const error=validateBooking(b,new Date(),b&&typeof b==='object'&&validApps.has(b.appId)?await resolveAppSchedule(db,b.appId):undefined);if(error)return json({error},400);
     const id=crypto.randomUUID(),appName=appNames[b.appId],email=b.email.trim().toLowerCase(),createdAt=new Date().toISOString();
     // Checked explicitly, and BEFORE the capacity-guarded insert below: once a slot is at
     // SESSION_CAPACITY, the same email re-submitting would otherwise be rejected as "full"

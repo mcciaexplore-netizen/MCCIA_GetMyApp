@@ -30,10 +30,14 @@
 .admin-nav{display:flex;gap:6px;margin:24px 0 8px;border-bottom:1px solid #e2e5ed;flex-wrap:wrap}
 .admin-nav-item{background:none;border:0;padding:10px 16px;font-size:14px;color:#7d8492;border-bottom:2px solid transparent;font:inherit}
 .admin-nav-item.selected{color:var(--red);border-color:var(--red);font-weight:650}
-.sessions-table-wrap{overflow-x:auto;margin-top:10px}
+.sessions-table-wrap{overflow-x:auto;margin-top:10px;max-height:70vh;overflow-y:auto;border:1px solid #eef0f4;border-radius:12px}
 .sessions-table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
-.sessions-table th{text-align:left;padding:10px 12px;font-size:11px;color:#7d8492;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #e2e5ed;white-space:nowrap}
-.sessions-table td{padding:12px;border-bottom:1px solid #eef0f4;vertical-align:middle;white-space:nowrap}
+.sessions-table th{text-align:left;padding:12px 14px;font-size:11px;color:#5c46c9;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #e2e5ed;white-space:nowrap;background:#f7f5ff;position:sticky;top:0;z-index:1}
+.sessions-table td{padding:12px 14px;border-bottom:1px solid #eef0f4;vertical-align:middle;white-space:nowrap}
+.sessions-table-compact tbody tr:nth-child(even){background:#fafafd}
+.sessions-table-compact tbody tr:hover{background:#f3f1fb}
+.cell-stack{display:flex;flex-direction:column;gap:3px}
+.cell-stack small{color:#7d8492;font-size:11px}
 .status-pill{display:inline-block;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:650}
 .session-edit-form{display:grid;gap:16px;margin-top:18px;max-width:420px}
 .session-edit-form label{display:block;font-size:14px}
@@ -58,8 +62,9 @@
 /* "See everyone's progress" / "See all my bookings" -- styled as buttons (not plain text links)
    on the confirmation card and public session page, sitting below the primary action. */
 .progress-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin:18px 0 0}
-.button-secondary{display:inline-block;background:#f1eefb;color:#5c46c9;border-radius:9px;padding:12px 20px;font-size:14px;font-weight:650;text-decoration:none}
+.button-secondary{display:inline-block;background:#f1eefb;color:#5c46c9;border:0;border-radius:9px;padding:12px 20px;font:inherit;font-size:14px;font-weight:650;text-decoration:none;cursor:pointer}
 .button-secondary:hover{background:#e6e0fb}
+.button-secondary-sm{padding:7px 14px;font-size:12px;border-radius:7px}
 @media(max-width:560px){.progress-actions{flex-direction:column;align-items:stretch;text-align:center}}
 
 /* Staff inline unlock on the public session page, shared progress view, calendar view --
@@ -132,17 +137,27 @@ button.danger{background:#c23b34;color:#fff;border:0;border-radius:8px;padding:9
 button.danger:disabled{opacity:.6;cursor:default}
 
 /* Member dashboard (#/my-bookings) */
+.my-bookings-view{max-width:760px}
 .member-lookup-form{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;background:#fff;border:1px solid #e2e5ed;border-radius:14px;padding:20px;margin:18px 0}
 .member-lookup-form label{font-size:13px;color:#4c5262;flex:1;min-width:180px}
 .member-lookup-form input{display:block;margin-top:6px;padding:12px;border:1px solid #d9dfe7;border-radius:7px;font:inherit;width:100%;box-sizing:border-box}
 .member-lookup-form button{flex-shrink:0}
-.member-sessions-grid{display:grid;gap:12px;margin-top:8px}
-.member-session-card{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:#fff;border:1px solid #e2e5ed;border-radius:12px;padding:16px 18px;text-decoration:none;color:inherit;transition:border-color .15s,background .15s}
-.member-session-card:hover{border-color:#6647eb;background:#f7f5ff}
+.my-bookings-count{font-size:12px;color:#7d8492;text-transform:uppercase;letter-spacing:.5px;margin:22px 0 10px}
+.my-bookings-empty{background:#fff;border:1px solid #e2e5ed;border-radius:14px;padding:26px 20px;text-align:center;color:#7d8492;margin-top:10px}
+.my-bookings-empty p{margin:4px 0;font-size:13px}
+.my-bookings-empty p:first-child{color:#232b40;font-size:15px;font-weight:650}
+.member-sessions-grid{display:grid;gap:12px}
+.member-session-card{display:flex;align-items:center;gap:16px;background:#fff;border:1px solid #e2e5ed;border-left:4px solid var(--app-accent,#6647eb);border-radius:12px;padding:16px 18px;text-decoration:none;color:inherit;transition:border-color .15s,background .15s,transform .15s}
+.member-session-card:hover{background:#f7f5ff;transform:translateX(2px)}
+.member-session-symbol{flex-shrink:0;width:42px;height:42px;border-radius:10px;background:var(--app-accent,#6647eb);display:flex;align-items:center;justify-content:center;font-size:19px;color:#fff}
+.member-session-body{flex:1;min-width:0}
 .member-session-app{font-weight:650;font-size:15px}
-.member-session-when{font-size:13px;color:#7d8492}
-.member-session-status{display:flex;align-items:center;gap:10px;font-size:13px;color:#4c5262}
-@media(max-width:560px){.member-lookup-form{flex-direction:column;align-items:stretch}.member-session-card{flex-direction:column;align-items:flex-start}}
+.member-session-when{font-size:13px;color:#7d8492;margin-top:2px}
+.member-session-status{display:flex;align-items:center;gap:10px;font-size:13px;color:#4c5262;margin-top:8px}
+.member-session-percent{font-weight:650}
+.member-session-body .progress-track{margin:8px 0 0;height:6px}
+.member-session-arrow{flex-shrink:0;color:#6647eb;font-size:18px}
+@media(max-width:560px){.member-lookup-form{flex-direction:column;align-items:stretch}.member-session-arrow{display:none}}
 
 /* Admin Sessions table: copy-to-clipboard for reporting */
 .sessions-toolbar{display:flex;align-items:center;gap:10px;margin:10px 0}
