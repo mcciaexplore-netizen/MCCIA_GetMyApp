@@ -26,7 +26,7 @@ const appSchedule = {
  'mr-wasooli':[{date:'2026-09-30',slot:'14:30'},{date:'2026-10-08',slot:'11:00'}],
  'hr-studio':[{date:'2026-10-01',slot:'11:00'},{date:'2026-10-05',slot:'15:30'}],
  'stocklist':[{date:'2026-10-01',slot:'14:30'},{date:'2026-10-07',slot:'15:30'}],
- 'minicrm':[{date:'2026-10-01',slot:'15:30'},{date:'2026-10-09',slot:'11:00'},{date:'2026-10-09',slot:'15:30'}],
+ 'minicrm':[{date:'2026-10-01',slot:'15:30'},{date:'2026-10-09',slot:'11:00'},{date:'2026-10-03',slot:'11:00'},{date:'2026-10-06',slot:'15:30'}],
  'compliance-calender':[{date:'2026-10-09',slot:'14:30'}],
  'ai-procurement-agent':[{date:'2026-10-03',slot:'14:30'},{date:'2026-10-08',slot:'15:30'}],
  'production-saathi':[{date:'2026-10-03',slot:'15:30'},{date:'2026-10-05',slot:'14:30'}]
