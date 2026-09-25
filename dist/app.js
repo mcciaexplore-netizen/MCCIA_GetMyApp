@@ -290,7 +290,7 @@ function groupProgressByCompany(list){
 }
 function renderProgressView(){
  const groups=progressList?groupProgressByCompany(progressList):[];
- root.innerHTML=`<div class="container progress-view"><div class="finish-header"><div class="eyebrow">MCCIA APPLIED AI STUDIO</div><h1>Everyone’s progress</h1><p>See how other MSMEs are progressing through their sessions.</p></div>${
+ root.innerHTML=`<div class="container progress-view"><div class="finish-header"><div class="eyebrow">MCCIA APPLIED AI STUDIO</div><h1>Everyone’s progress</h1><p>See which applications other MSMEs have booked.</p></div>${
   progressLoading?'<p role="status">Loading…</p>'
   :progressError?`<p class="error" role="alert">${esc(progressError)}</p>`
   :!progressList?''
@@ -302,7 +302,7 @@ function renderProgressView(){
      <span class="progress-company-count">${apps.length} ${apps.length===1?'application':'applications'}</span>
      <span class="calendar-day-arrow" aria-hidden="true">${expanded?'▲':'▼'}</span>
     </button>
-    ${expanded?`<ul class="progress-app-list">${apps.map(s=>`<li><span class="progress-app-name">${esc(s.appName)}</span><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span><span class="progress-app-percent">${s.progressPercent}%</span></li>`).join('')}</ul>`:''}
+    ${expanded?`<ul class="progress-app-list">${apps.map(s=>`<li><span class="progress-app-name">${esc(s.appName)}</span></li>`).join('')}</ul>`:''}
    </div>`;
   }).join('')}</div>`
   :'<p>No sessions yet.</p>'

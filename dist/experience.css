@@ -55,9 +55,9 @@
 .session-qr p{font-size:12px;color:#7d8492;margin:10px 0 0;line-height:1.5}
 @media(max-width:560px){.session-qr img{width:180px}}
 
-.password-field{position:relative;display:flex;align-items:center}
-.password-field input{flex:1;padding:13px 70px 13px 13px;border:1px solid #d9dfe7;border-radius:7px;font:inherit;width:100%;box-sizing:border-box;margin-top:8px}
-.password-field button{position:absolute;right:6px;top:14px;background:none;border:0;color:#6647eb;font-size:13px;font-weight:650;cursor:pointer;padding:8px 10px}
+.password-field{position:relative;display:flex;align-items:center;margin-top:8px}
+.password-field input{flex:1;padding:13px 70px 13px 13px;border:1px solid #d9dfe7;border-radius:7px;font:inherit;width:100%;box-sizing:border-box}
+.password-field button{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;color:#6647eb;font-size:13px;font-weight:650;cursor:pointer;padding:8px 10px}
 
 /* "See everyone's progress" / "See all my bookings" -- styled as buttons (not plain text links)
    on the confirmation card and public session page, sitting below the primary action. */
@@ -166,7 +166,6 @@ button.danger:disabled{opacity:.6;cursor:default}
 /* Everyone's progress (#/progress): grid of company cards, click to expand. Cards sit in normal
    grid flow, so an expanded card's extra height naturally reflows the cards after it -- no
    absolute positioning or JS layout math needed. */
-.progress-view{max-width:920px}
 .progress-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:22px;align-items:start}
 .progress-company-card{border:1px solid #e2e5ed;border-radius:12px;background:#fff;overflow:hidden}
 .progress-company-toggle{width:100%;display:flex;align-items:center;gap:10px;padding:14px 16px;background:#fff;border:0;font:inherit;text-align:left;cursor:pointer}
@@ -176,5 +175,4 @@ button.danger:disabled{opacity:.6;cursor:default}
 .progress-app-list{list-style:none;margin:0;padding:0 16px 12px}
 .progress-app-list li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #eef0f4}
 .progress-app-name{flex:1;font-size:13px;overflow-wrap:anywhere}
-.progress-app-percent{font-size:12px;color:#7d8492;min-width:36px;text-align:right}
 @media(max-width:560px){.progress-grid{grid-template-columns:1fr}}
