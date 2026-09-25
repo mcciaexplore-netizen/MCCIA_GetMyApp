@@ -444,10 +444,10 @@ function computeStageCounts(sessions){const counts={'Not Started':0,'In Progress
 // "Copy table" (which includes names/phone/email) since this grid is summary numbers only.
 function statsGridTSV(sessions){const counts=computeStageCounts(sessions);return [['Total bookings',sessions.length],['Not Started',counts['Not Started']],['In Progress',counts['In Progress']],['Completed',counts['Completed']]].map(([label,value])=>label+'\t'+value).join('\n')}
 function statsGridHTML(sessions){const counts=computeStageCounts(sessions);return `<div class="stats-toolbar"><button type="button" class="text-button" id="copy-stats">Copy numbers ⧉</button><span class="copy-status" id="copy-stats-status" role="status"></span></div><div class="stats-grid">
- <div class="stat-card"><span class="stat-value">${sessions.length}</span><span class="stat-label">Total bookings</span></div>
- <div class="stat-card"><span class="stat-value" style="color:#6647eb">${counts['Not Started']}</span><span class="stat-label">Not started</span></div>
- <div class="stat-card"><span class="stat-value" style="color:#a5720b">${counts['In Progress']}</span><span class="stat-label">In progress</span></div>
- <div class="stat-card"><span class="stat-value" style="color:#1e8a4c">${counts['Completed']}</span><span class="stat-label">Completed</span></div>
+ <div class="stat-card stat-card-total"><span class="stat-value">${sessions.length}</span><span class="stat-label">Total bookings</span></div>
+ <div class="stat-card stat-card-not-started"><span class="stat-value">${counts['Not Started']}</span><span class="stat-label">Not started</span></div>
+ <div class="stat-card stat-card-in-progress"><span class="stat-value">${counts['In Progress']}</span><span class="stat-label">In progress</span></div>
+ <div class="stat-card stat-card-completed"><span class="stat-value">${counts['Completed']}</span><span class="stat-label">Completed</span></div>
 </div>`}
 function viewToggleHTML(){return `<div class="view-toggle" role="tablist">${[['day','Day'],['week','Week'],['all','All']].map(([key,label])=>`<button type="button" class="view-toggle-item ${calendarViewMode===key?'selected':''}" data-view-mode="${key}" role="tab" aria-selected="${calendarViewMode===key}">${label}</button>`).join('')}</div>`}
 // Google-Calendar-style detail popup for one booking, opened by clicking its chip in the
@@ -479,12 +479,13 @@ function calendarModalHTML(){
   ${calendarModalStageError?`<p class="error" role="alert">${esc(calendarModalStageError)}</p>`:''}
   ${calendarModalStageMessage?`<p class="editor-message" role="status">${esc(calendarModalStageMessage)}</p>`:''}
   <div class="modal-actions" style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-   <a class="text-button" href="#/editor/session/${s.id}">Open full session (edit, reschedule, delete) →</a>
+   <a class="button-secondary" href="#/editor/session/${s.id}">View session →</a>
+   ${calendarModalDeleteConfirming?'':`<button type="button" class="danger" id="calendar-modal-delete-start">Delete</button>`}
   </div>
   ${calendarModalDeleteError?`<p class="error" role="alert">${esc(calendarModalDeleteError)}</p>`:''}
   ${calendarModalDeleteConfirming
    ?`<p style="margin-top:12px">Delete this booking? No email is sent, and this cannot be undone.</p><button type="button" class="danger" id="calendar-modal-delete-yes" ${calendarModalDeleteBusy?'disabled':''}>${calendarModalDeleteBusy?'Deleting…':'Yes, delete'}</button> <button type="button" class="text-button" id="calendar-modal-delete-no" ${calendarModalDeleteBusy?'disabled':''}>Cancel</button>`
-   :`<button type="button" class="text-button" id="calendar-modal-delete-start" style="margin-top:12px;color:#c23b34">Delete booking</button>`}
+   :''}
  </div></div>`;
 }
 function availabilityPanelHTML(){return `<div class="editor-toolbar"><label>Choose a date<select id="editor-date"><option value="">Select a scheduled date</option>${eventDates.map(date=>`<option value="${date}" ${date===editorDate?'selected':''}>${dateLabel(date)} 2026</option>`).join('')}</select></label></div><div class="editor-board">${editorSlots?`<div class="section-heading"><h2>${dateLabel(editorDate)}</h2><span>Changes apply to all applications</span></div><form id="editor-save"><div class="day-actions"><button type="button" data-day-action="show">Show day</button><button type="button" data-day-action="hide">Hide day</button><button type="button" data-day-action="activate">Activate day</button><button type="button" data-day-action="deactivate">Deactivate day</button></div><div class="editor-row editor-table-head"><span>One-hour session</span><span>Display</span><span>Active</span></div>${editorSlots.map(s=>`<div class="editor-row"><strong>${timeLabels[s.time]}</strong><label><input type="checkbox" data-visible="${s.time}" ${s.visible?'checked':''} aria-label="Display ${timeLabels[s.time]}"><span>Show</span></label><label><input type="checkbox" data-active="${s.time}" ${s.active?'checked':''} ${s.booked?'disabled':''} aria-label="Activate ${timeLabels[s.time]}"><span>${s.booked?'Booked':'Bookable'}</span></label></div>`).join('')}<p>Hidden slots do not appear to visitors. Inactive slots remain visible but cannot be booked. Existing bookings are preserved.</p><button class="primary">Save availability ✓</button></form>`:'<p>Select a scheduled date to manage its three session slots.</p>'}</div>`}

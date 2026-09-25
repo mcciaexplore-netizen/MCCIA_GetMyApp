@@ -84,12 +84,22 @@
 /* Dashboard redesign: stats grid, day/week/all toggle, clickable booking chips, detail modal.
    Kept deliberately compact (small gaps/padding) -- this tab is scanned, not read, and dense
    spacing lets more of the day's bookings show without scrolling. */
-.editor-shell{max-width:1400px}
+.editor-shell{max-width:1400px;padding-top:28px}
+.editor-toolbar{margin:0 0 18px}
+.admin-nav{margin:0 0 8px}
 .editor-board{padding:20px}
 .stats-toolbar{display:flex;align-items:center;gap:10px;margin:8px 0 0}
-.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0 4px}
-.stat-card{border:1px solid #e2e5ed;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;background:#fff}
-.stat-value{font-size:21px;font-weight:700;line-height:1.15}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:8px 0 6px}
+.stat-card{border:1px solid transparent;border-top-width:3px;border-radius:10px;padding:14px 14px 12px;display:flex;flex-direction:column;gap:2px}
+.stat-card-total{background:#f5f4fb;border-top-color:#8f7ee0}
+.stat-card-not-started{background:#f1eefb;border-top-color:#6647eb}
+.stat-card-in-progress{background:#fff6df;border-top-color:#c99321}
+.stat-card-completed{background:#e6f7ec;border-top-color:#2fa968}
+.stat-card-total .stat-value{color:#3f3470}
+.stat-card-not-started .stat-value{color:#6647eb}
+.stat-card-in-progress .stat-value{color:#a5720b}
+.stat-card-completed .stat-value{color:#1e8a4c}
+.stat-value{font-size:26px;font-weight:800;line-height:1.15}
 .stat-label{font-size:11px;color:#7d8492}
 @media(max-width:560px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
 .calendar-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}
