@@ -55,9 +55,15 @@
 .password-field input{flex:1;padding:13px 70px 13px 13px;border:1px solid #d9dfe7;border-radius:7px;font:inherit;width:100%;box-sizing:border-box;margin-top:8px}
 .password-field button{position:absolute;right:6px;top:14px;background:none;border:0;color:#6647eb;font-size:13px;font-weight:650;cursor:pointer;padding:8px 10px}
 
+/* "See everyone's progress" / "See all my bookings" -- styled as buttons (not plain text links)
+   on the confirmation card and public session page, sitting below the primary action. */
+.progress-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin:18px 0 0}
+.button-secondary{display:inline-block;background:#f1eefb;color:#5c46c9;border-radius:9px;padding:12px 20px;font-size:14px;font-weight:650;text-decoration:none}
+.button-secondary:hover{background:#e6e0fb}
+@media(max-width:560px){.progress-actions{flex-direction:column;align-items:stretch;text-align:center}}
+
 /* Staff inline unlock on the public session page, shared progress view, calendar view --
    styled as a contained card once opened so it doesn't look like a bare unstyled form. */
-.progress-link{text-align:center;margin:14px 0 0}
 .staff-unlock{margin-top:22px;padding-top:16px;border-top:1px solid #e8ebf0;font-size:13px;color:#7d8492}
 .staff-unlock summary{cursor:pointer;color:#6647eb;font-weight:650;list-style:none}
 .staff-unlock summary::-webkit-details-marker{display:none}

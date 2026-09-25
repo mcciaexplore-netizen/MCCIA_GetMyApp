@@ -6,9 +6,9 @@ create table if not exists public.bookings (
  name text not null, phone text not null, email text not null, company text not null default '',
  member_id text not null default '',
  created_at timestamptz not null default now(),
- -- No occupancy/capacity limit: any number of different people may book the same app+date+slot.
- -- This constraint only guards against the SAME person (identified by email) accidentally
- -- double-submitting the same app+date+slot; it is not a capacity limit.
+ -- The unique index below only guards against the SAME person (identified by email)
+ -- accidentally double-submitting the same app+date+slot; the capacity limit (currently 3
+ -- simultaneous bookings per app+date+slot) is enforced in book_session() below, not here.
  unique(app_id, date, slot, email)
 );
 -- Run this separately if bookings already exists from before member_id was added:
@@ -43,7 +43,11 @@ drop function if exists public.book_session(uuid,text,text,text,text,text,text);
 drop function if exists public.book_session(uuid,text,text,text,text,text,text,text,text);
 create or replace function public.book_session(p_id uuid,p_app text,p_app_name text,p_date text,p_slot text,p_name text,p_phone text,p_email text,p_company text,p_member_id text) returns boolean language plpgsql set search_path=public as $$
 begin
+ -- Serializes concurrent booking attempts for the SAME app+date+slot so two simultaneous
+ -- requests can't both pass the capacity check below and jointly overshoot it.
+ perform pg_advisory_xact_lock(hashtextextended(p_app||p_date||p_slot,0));
  if exists(select 1 from availability where date=p_date and slot=p_slot and (visible=0 or active=0)) then return false; end if;
+ if (select count(*) from bookings where app_id=p_app and date=p_date and slot=p_slot) >= 3 then return false; end if;
  insert into bookings(id,app_id,app_name,date,slot,name,phone,email,company,member_id) values(p_id,p_app,p_app_name,p_date,p_slot,p_name,p_phone,p_email,p_company,p_member_id);
  -- Created inside the same transaction as the booking itself: if this insert fails for any
  -- reason, the whole function raises and the booking insert rolls back too, so a booking can

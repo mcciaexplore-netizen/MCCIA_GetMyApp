@@ -12,5 +12,8 @@
   "devDependencies": {
     "drizzle-kit": "0.31.4",
     "drizzle-orm": "0.44.5"
+  },
+  "dependencies": {
+    "nodemailer": "^10.0.10"
   }
 }

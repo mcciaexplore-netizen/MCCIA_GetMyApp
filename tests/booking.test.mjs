@@ -38,17 +38,23 @@ test('each application receives only its assigned dates and exact time slot',asy
  db.close();
 });
 
-test('different people can book the same app/date/slot; the same person cannot duplicate it',async()=>{
+test('up to 3 different people can book the same app/date/slot; a 4th is rejected as full, and the same person cannot duplicate it',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db);
  const first=await worker.fetch(request('bookings','POST',booking),{DB});assert.equal(first.status,201);
  const second=await worker.fetch(request('bookings','POST',{...booking,email:'second-person@example.com'}),{DB});assert.equal(second.status,201);
  const third=await worker.fetch(request('bookings','POST',{...booking,email:'ThirdPerson@Example.com'}),{DB});assert.equal(third.status,201);
- // Same email (case/whitespace-insensitive) booking the same app+date+slot again is rejected as a duplicate, not treated as capacity exhaustion.
+ // Same email (case/whitespace-insensitive) booking the same app+date+slot again is rejected as a duplicate, distinct from capacity exhaustion.
  const duplicate=await worker.fetch(request('bookings','POST',booking),{DB});assert.equal(duplicate.status,409);
  assert.match((await duplicate.json()).error,/already booked/i);
- // Slot must remain available after multiple people have booked it — there is no occupancy limit.
+ // A 4th distinct person is rejected once the slot has reached its 3-booking capacity.
+ const fourth=await worker.fetch(request('bookings','POST',{...booking,email:'fourth-person@example.com'}),{DB});
+ assert.equal(fourth.status,409);
+ assert.match((await fourth.json()).error,/full/i);
+ // Availability must reflect the slot as full (and unavailable) once capacity is reached.
  const response=await (await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),{DB})).json();
- assert.equal(response.slots.find(s=>s.time==='14:30').available,true);
+ const slot=response.slots.find(s=>s.time==='14:30');
+ assert.equal(slot.full,true);
+ assert.equal(slot.available,false);
  assert.equal(JSON.stringify(response).includes(booking.email),false);
  assert.equal((await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),{})).status,503);
  db.close();
@@ -119,6 +125,40 @@ test('a booking still succeeds even if the confirmation email fails to send',asy
  assert.equal(res.status,201);
  const body=await res.json();
  assert.ok(body.id);
+ db.close();
+});
+
+test('when env.sendMailSMTP is provided, it is used instead of the Sheets webhook for email',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db);
+ const smtpCalls=[];
+ const env={DB,...sheetsEnv,STUDIO_NOTIFICATION_EMAIL:'mcciaexplore@gmail.com',sendMailSMTP:async(msg)=>{smtpCalls.push(msg)}};
+ const sheets=mockSheetsFetch(true);
+ let res;
+ try{res=await worker.fetch(request('bookings','POST',booking),env)}
+ finally{sheets.restore()}
+ assert.equal(res.status,201);
+ // Sheet sync (progress mirror) still goes through the webhook -- only the two email sends
+ // (visitor + studio) are diverted to SMTP.
+ assert.equal(smtpCalls.length,2);
+ const visitorMail=smtpCalls.find(m=>m.to===booking.email.toLowerCase());
+ assert.ok(visitorMail,'the visitor must receive an SMTP-sent confirmation');
+ assert.match(visitorMail.subject,/confirmed/i);
+ assert.match(visitorMail.text,/Stocklist/);
+ const studioMail=smtpCalls.find(m=>m.to==='mcciaexplore@gmail.com');
+ assert.ok(studioMail,'the studio must receive an SMTP-sent notification');
+ assert.match(studioMail.subject,/New booking/i);
+ assert.ok(studioMail.text.includes(booking.memberId));
+ // No SEND_BOOKING_EMAIL call should have reached the Sheets webhook once SMTP is configured.
+ const emailCallsToSheets=sheets.calls.map(c=>JSON.parse(c.options.body)).filter(b=>b.action==='SEND_BOOKING_EMAIL');
+ assert.equal(emailCallsToSheets.length,0);
+ db.close();
+});
+
+test('a booking still succeeds even if env.sendMailSMTP throws',async()=>{
+ const db=testDatabase(),DB=databaseAdapter(db);
+ const env={DB,sendMailSMTP:async()=>{throw new Error('Simulated SMTP outage')}};
+ const res=await worker.fetch(request('bookings','POST',booking),env);
+ assert.equal(res.status,201);
  db.close();
 });
 
@@ -483,6 +523,11 @@ test('every public GET route resolves its queries against the real Supabase adap
    const res=await worker.fetch(request(path),{DB});
    assert.notEqual(res.status,503,path+' returned 503 -- likely an unsupported-query gap in supabase.js');
   }
+  // POST /api/bookings' new duplicate-email pre-check query (added alongside the session
+  // capacity limit) also needs its own supabase.js branch -- covered separately since it's a
+  // POST, not a GET.
+  const bookingRes=await worker.fetch(request('bookings','POST',booking),{DB});
+  assert.notEqual(bookingRes.status,503,'POST bookings returned 503 -- likely an unsupported-query gap in supabase.js');
  }finally{global.fetch=original}
 });
 

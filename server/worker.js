@@ -1,12 +1,16 @@
-const validApps = new Set(['dispatch-flow','tendersetu','gst-reconciliation','card-scanner','social-media-planner','digital-profile-creator','mr-wasooli','hr-studio','stocklist','minicrm',"compliance-calender","yojanasetu","hisabtalk-ai","ai-procurement-agent","production-saathi"]);
+const validApps = new Set(['dispatch-flow','tendersetu','gst-reconciliation','card-scanner','social-media-planner','digital-profile-creator','mr-wasooli','hr-studio','stocklist','minicrm',"compliance-calender","ai-procurement-agent","production-saathi"]);
 // Trusted appId -> display name map. Never take app_name from the request body; always derive it from here.
 const appNames = {
  'dispatch-flow':'Dispatch Flow','tendersetu':'TenderSetu','gst-reconciliation':'GST Reconciliation',
  'card-scanner':'Card Scanner','social-media-planner':'Social Media Planner','digital-profile-creator':'Digital Profile Creator',
  'mr-wasooli':'Payment Followup Agent','hr-studio':'HR Studio','stocklist':'Stocklist','minicrm':'MiniCRM',
- 'compliance-calender':'Compliance Calender','yojanasetu':'YojanaSetu','hisabtalk-ai':'Document Retriever',
+ 'compliance-calender':'Compliance Calender',
  'ai-procurement-agent':'AI Procurement Agent','production-saathi':'Production Saathi'
 };
+// Maximum simultaneous bookings for one app+date+slot (a "session"). Deliberately a total count,
+// not a distinct-company count -- company is free text (typos/casing vary) and isn't a safe key
+// to dedupe on.
+const SESSION_CAPACITY = 3;
 const slots = ['11:00','14:30','15:30'];
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Kept as small, easy-to-edit lists so the workflow vocabulary can change without touching logic.
@@ -22,10 +26,8 @@ const appSchedule = {
  'mr-wasooli':[{date:'2026-09-30',slot:'14:30'},{date:'2026-10-08',slot:'11:00'}],
  'hr-studio':[{date:'2026-10-01',slot:'11:00'},{date:'2026-10-05',slot:'15:30'}],
  'stocklist':[{date:'2026-10-01',slot:'14:30'},{date:'2026-10-07',slot:'15:30'}],
- 'minicrm':[{date:'2026-10-01',slot:'15:30'},{date:'2026-10-09',slot:'11:00'}],
+ 'minicrm':[{date:'2026-10-01',slot:'15:30'},{date:'2026-10-09',slot:'11:00'},{date:'2026-10-09',slot:'15:30'}],
  'compliance-calender':[{date:'2026-10-09',slot:'14:30'}],
- 'yojanasetu':[{date:'2026-10-09',slot:'15:30'}],
- 'hisabtalk-ai':[{date:'2026-10-03',slot:'11:00'},{date:'2026-10-06',slot:'15:30'}],
  'ai-procurement-agent':[{date:'2026-10-03',slot:'14:30'},{date:'2026-10-08',slot:'15:30'}],
  'production-saathi':[{date:'2026-10-03',slot:'15:30'},{date:'2026-10-05',slot:'14:30'}]
 };
@@ -58,12 +60,40 @@ async function upsertSheetRow(env,session){
  if(!res.ok||!data.success)throw new Error(data.error||'Google Sheets sync failed.');
  return true;
 }
-// Sends the visitor a booking confirmation (or reschedule notice, when booking.type==='reschedule')
-// email via the same Apps Script project used for the Sheet sync (no separate email service/
-// credentials needed). Best-effort: callers must catch and log failures here rather than let them
-// affect the booking response -- confirmation email is a convenience, not authoritative data,
-// unlike the Sheet write above.
+const EMAIL_TIME_LABELS={'11:00':'11:00 AM – 12:00 PM','14:30':'2:30 PM – 3:30 PM','15:30':'3:30 PM – 4:30 PM'};
+function emailFormatDate(dateStr){
+ try{return new Date(dateStr+'T12:00:00+05:30').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Kolkata'})}
+ catch{return dateStr||''}
+}
+// Builds the subject/text for one of three email kinds, mirroring what Apps Script's own
+// sendBookingEmail() builds for the webhook fallback path -- kept in sync manually since they're
+// two different environments with no shared module.
+function bookingEmailContent(b){
+ const dateLabel=emailFormatDate(b.date),timeLabel=EMAIL_TIME_LABELS[b.slot]||b.slot||'';
+ if(b.type==='studio-notification'){
+  return {subject:'New booking — '+(b.appName||'')+' · '+(b.name||''),text:'A new session was booked at MCCIA Applied AI Studio:\n\n'+
+   'Participant: '+(b.name||'')+'\n'+'Company: '+(b.company||'')+'\n'+'Member ID: '+(b.memberId||'')+'\n'+'Phone: '+(b.phone||'')+'\n'+'Email: '+(b.email||'')+'\n'+
+   'Application: '+(b.appName||'')+'\n'+'Date: '+dateLabel+'\n'+'Time: '+timeLabel+' IST\n'};
+ }
+ const isReschedule=b.type==='reschedule';
+ return {
+  subject:isReschedule?'Your MCCIA Applied AI Studio session has a new date/time — '+(b.appName||''):'Your MCCIA Applied AI Studio session is confirmed — '+(b.appName||''),
+  text:'Hi '+(b.name||'there')+',\n\n'+(isReschedule?'Your session at MCCIA Applied AI Studio has been rescheduled. The new details are:\n\n':'Your session at MCCIA Applied AI Studio is reserved:\n\n')+
+   'Application: '+(b.appName||'')+'\n'+'Date: '+dateLabel+'\n'+'Time: '+timeLabel+' IST\n\n'+'See you at the studio!\n\n'+'MCCIA Applied AI Studio'
+ };
+}
+// Sends the visitor a booking confirmation (or reschedule notice, when booking.type==='reschedule',
+// or a studio-notification when booking.type==='studio-notification'). Uses SMTP directly
+// (env.sendMailSMTP, injected by api/[...path].js when SMTP_* env vars are configured) when
+// available; otherwise falls back to the Apps Script webhook used for the Sheet sync. Best-effort
+// either way: callers must catch and log failures here rather than let them affect the booking
+// response -- confirmation email is a convenience, not authoritative data.
 async function sendBookingEmail(env,booking){
+ if(env.sendMailSMTP){
+  const {subject,text}=bookingEmailContent(booking);
+  await env.sendMailSMTP({to:booking.to,subject,text});
+  return;
+ }
  if(!env.GOOGLE_SHEETS_WEBHOOK_URL||!env.GOOGLE_SHEETS_WEBHOOK_SECRET)return;
  const res=await fetch(env.GOOGLE_SHEETS_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:env.GOOGLE_SHEETS_WEBHOOK_SECRET,action:'SEND_BOOKING_EMAIL',booking})});
  let data;try{data=await res.json()}catch{throw new Error('Email service returned an unexpected response.')}
@@ -244,16 +274,29 @@ export default {async fetch(request,env){
    if(url.pathname==='/api/schedule'&&request.method==='GET'){
     const appId=url.searchParams.get('appId');if(!validApps.has(appId))return json({error:'Choose a valid application.'},400);
     const entries=appSchedule[appId].filter(({date})=>isValidDate(date));if(!entries.length)return json({days:[]});
-    const dates=entries.map(({date})=>date);
+    // Some apps (e.g. minicrm) have more than one slot on the same date -- dedupe to one day
+    // entry per date, since this endpoint feeds the day-picker, not the per-slot list (that's
+    // /api/availability). A day counts as visible/active if ANY of its slots are.
+    const dates=[...new Set(entries.map(({date})=>date))].sort();
     const rows=await db.prepare('SELECT date, slot, visible, active FROM availability WHERE date >= ? AND date <= ?').bind(dates[0],dates.at(-1)).all();
-    return json({days:entries.map(({date,slot})=>{const setting=rows.results.find(r=>r.date===date&&r.slot===slot);return {date,visible:!setting||!!setting.visible,active:!setting||!!setting.active}}).filter(d=>d.visible)});
+    const days=dates.map(date=>{
+     const perSlot=entries.filter(e=>e.date===date).map(({slot})=>{const setting=rows.results.find(r=>r.date===date&&r.slot===slot);return {visible:!setting||!!setting.visible,active:!setting||!!setting.active}});
+     return {date,visible:perSlot.some(s=>s.visible),active:perSlot.some(s=>s.visible&&s.active)};
+    }).filter(d=>d.visible);
+    return json({days});
    }
    if(url.pathname==='/api/availability'&&request.method==='GET'){
     const date=url.searchParams.get('date'),appId=url.searchParams.get('appId');if(!validApps.has(appId)||!isValidDate(date,new Date(),appId))return json({error:'Choose an available date for this application.'},400);
-    // No occupancy limit: a slot's availability depends only on the editor's visible/active flags
-    // and whether its time has passed, never on how many people have already booked it.
+    // A slot is available when the editor's visible/active flags allow it, its time hasn't
+    // passed, AND fewer than SESSION_CAPACITY people have already booked it for this app.
     const settings=(await db.prepare('SELECT slot, visible, active FROM availability WHERE date = ?').bind(date).all()).results;
-    return json({date,slots:appSchedule[appId].filter(entry=>entry.date===date).map(({slot})=>({time:slot,visible:settings.find(r=>r.slot===slot)?.visible!==0,available:settings.find(r=>r.slot===slot)?.visible!==0&&settings.find(r=>r.slot===slot)?.active!==0&&+new Date(date+'T'+slot+':00+05:30')>Date.now()}))});
+    const existingBookings=(await db.prepare('SELECT slot FROM bookings WHERE app_id = ? AND date = ?').bind(appId,date).all()).results;
+    const bookedCounts={};for(const row of existingBookings)bookedCounts[row.slot]=(bookedCounts[row.slot]||0)+1;
+    return json({date,slots:appSchedule[appId].filter(entry=>entry.date===date).map(({slot})=>{
+     const visible=settings.find(r=>r.slot===slot)?.visible!==0,active=settings.find(r=>r.slot===slot)?.active!==0;
+     const full=(bookedCounts[slot]||0)>=SESSION_CAPACITY;
+     return {time:slot,visible,full,available:visible&&active&&!full&&+new Date(date+'T'+slot+':00+05:30')>Date.now()};
+    })});
    }
    if(url.pathname==='/api/bookings'&&request.method==='POST'){
     if(request.headers.get('Origin')!==url.origin)return json({error:'Please book from this application.'},403);
@@ -261,13 +304,16 @@ export default {async fetch(request,env){
     const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);
     let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
     const error=validateBooking(b);if(error)return json({error},400);
-    const id=crypto.randomUUID(),appName=appNames[b.appId],createdAt=new Date().toISOString();
-    // No occupancy limit: any number of different people may book the same app+date+slot.
-    // The unique index on (app_id, date, slot, email) only guards against the SAME person
-    // accidentally double-submitting; it is not a capacity check.
+    const id=crypto.randomUUID(),appName=appNames[b.appId],email=b.email.trim().toLowerCase(),createdAt=new Date().toISOString();
+    // Checked explicitly, and BEFORE the capacity-guarded insert below: once a slot is at
+    // SESSION_CAPACITY, the same email re-submitting would otherwise be rejected as "full"
+    // instead of the more accurate "you already booked this" -- the capacity WHERE guard alone
+    // can't distinguish the two once the slot has no room left.
+    const existing=(await db.prepare('SELECT 1 FROM bookings WHERE app_id = ? AND date = ? AND slot = ? AND email = ?').bind(b.appId,b.date,b.slot,email).all()).results;
+    if(existing.length)return json({error:"You've already booked this application's session for this date and time."},409);
     try{
-     const saved=await db.prepare('INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, member_id, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0))').bind(id,b.appId,appName,b.date,b.slot,b.name.trim(),b.phone.trim(),b.email.trim().toLowerCase(),b.company.trim(),b.memberId.trim(),createdAt,b.date,b.slot).run();
-     if((saved.meta?.changes??saved.changes)===0)return json({error:'This slot is no longer available. Please choose another time.'},409);
+     const saved=await db.prepare('INSERT INTO bookings (id, app_id, app_name, date, slot, name, phone, email, company, member_id, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM availability WHERE date = ? AND slot = ? AND (visible = 0 OR active = 0)) AND (SELECT COUNT(*) FROM bookings WHERE app_id = ? AND date = ? AND slot = ?) < '+SESSION_CAPACITY).bind(id,b.appId,appName,b.date,b.slot,b.name.trim(),b.phone.trim(),email,b.company.trim(),b.memberId.trim(),createdAt,b.date,b.slot,b.appId,b.date,b.slot).run();
+     if((saved.meta?.changes??saved.changes)===0)return json({error:'This slot is full or no longer available. Please choose another time.'},409);
      // Every booking must have exactly one session_progress row. In production this is created
      // atomically inside book_session() itself (see supabase/schema.sql) -- if that insert fails,
      // the whole booking rolls back there, so we never reach this point with an inconsistent
@@ -281,13 +327,13 @@ export default {async fetch(request,env){
      catch(spErr){console.error('Failed to create session_progress for booking',id,String(spErr));return json({error:'Booking could not be completed. Please try again.'},503)}
      // Best-effort booking confirmation email to the visitor. Never blocks or fails the booking --
      // a visitor's reservation must not depend on an email provider being reachable.
-     try{await sendBookingEmail(env,{to:b.email.trim().toLowerCase(),name:b.name.trim(),appName,date:b.date,slot:b.slot})}
+     try{await sendBookingEmail(env,{to:email,name:b.name.trim(),appName,date:b.date,slot:b.slot})}
      catch(emailErr){console.error('Booking confirmation email failed for',id,String(emailErr))}
      // Best-effort notification to the studio, if configured. Unlike the visitor email, this one
      // carries every field the studio would want (phone, email, company, member ID) -- it's an
      // internal notice, not something shown to the visitor.
      if(env.STUDIO_NOTIFICATION_EMAIL){
-      try{await sendBookingEmail(env,{to:env.STUDIO_NOTIFICATION_EMAIL,type:'studio-notification',name:b.name.trim(),phone:b.phone.trim(),email:b.email.trim().toLowerCase(),company:b.company.trim(),memberId:b.memberId.trim(),appName,date:b.date,slot:b.slot})}
+      try{await sendBookingEmail(env,{to:env.STUDIO_NOTIFICATION_EMAIL,type:'studio-notification',name:b.name.trim(),phone:b.phone.trim(),email,company:b.company.trim(),memberId:b.memberId.trim(),appName,date:b.date,slot:b.slot})}
       catch(emailErr){console.error('Studio notification email failed for',id,String(emailErr))}
      }
     }
