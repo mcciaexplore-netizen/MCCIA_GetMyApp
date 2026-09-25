@@ -56,7 +56,12 @@
 @media(max-width:560px){.session-qr img{width:180px}}
 
 .password-field{position:relative;display:flex;align-items:center;margin-top:8px}
-.password-field input{flex:1;padding:13px 70px 13px 13px;border:1px solid #d9dfe7;border-radius:7px;font:inherit;width:100%;box-sizing:border-box}
+/* .editor-login input,.editor-toolbar input (base stylesheet) also targets this same input with
+   equal specificity and sets its own margin-top:8px -- without resetting it here, that margin
+   stacks with .password-field's own margin-top above, pushing the input down inside its own box
+   while the Show button (centered on the outer box) doesn't move with it. Explicit margin:0
+   defeats that regardless of source order. */
+.password-field input{flex:1;margin:0;padding:13px 70px 13px 13px;border:1px solid #d9dfe7;border-radius:7px;font:inherit;width:100%;box-sizing:border-box}
 .password-field button{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:0;color:#6647eb;font-size:13px;font-weight:650;cursor:pointer;padding:8px 10px}
 
 /* "See everyone's progress" / "See all my bookings" -- styled as buttons (not plain text links)
