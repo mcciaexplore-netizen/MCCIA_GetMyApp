@@ -181,3 +181,8 @@ button.danger:disabled{opacity:.6;cursor:default}
 .progress-app-list li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #eef0f4}
 .progress-app-name{flex:1;font-size:13px;overflow-wrap:anywhere}
 @media(max-width:560px){.progress-grid{grid-template-columns:1fr}}
+
+/* "My bookings" entry points: persistent nav (every page except landing) and the landing hero's
+   top line (landing hides .nav entirely, so it needs its own link). */
+.landing-topline a{color:#d7d5ee;text-decoration:none}
+.landing-topline a:hover{color:#fff}
