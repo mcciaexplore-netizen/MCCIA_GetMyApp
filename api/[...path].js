@@ -13,7 +13,7 @@ function buildSmtpSender(env){
   secure:Number(env.SMTP_PORT)===465,
   auth:{user:env.SMTP_USER,pass:env.SMTP_PASS}
  });
- return async({to,subject,text})=>{await transporter.sendMail({from:env.SMTP_FROM||env.SMTP_USER,to,subject,text})};
+ return async({to,subject,text,html})=>{await transporter.sendMail({from:env.SMTP_FROM||env.SMTP_USER,to,subject,text,html})};
 }
 export default async function handler(req,res){
  try{

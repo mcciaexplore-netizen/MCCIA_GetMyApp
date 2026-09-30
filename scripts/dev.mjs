@@ -11,7 +11,7 @@ fs.mkdirSync('.local',{recursive:true});
 function buildSmtpSender(){
  if(!process.env.SMTP_HOST||!process.env.SMTP_PORT||!process.env.SMTP_USER||!process.env.SMTP_PASS)return undefined;
  const transporter=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT),secure:Number(process.env.SMTP_PORT)===465,auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}});
- return async({to,subject,text})=>{await transporter.sendMail({from:process.env.SMTP_FROM||process.env.SMTP_USER,to,subject,text})};
+ return async({to,subject,text,html})=>{await transporter.sendMail({from:process.env.SMTP_FROM||process.env.SMTP_USER,to,subject,text,html})};
 }
 const sendMailSMTP=buildSmtpSender();
 const sqlite=new DatabaseSync('.local/bookings.sqlite');

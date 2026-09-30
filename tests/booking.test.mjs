@@ -132,12 +132,23 @@ test('a successful booking sends a confirmation email to the visitor via the She
  assert.equal(res.status,201);
  assert.equal(sheets.calls.length,1);
  const sentBody=JSON.parse(sheets.calls[0].options.body);
+ // The webhook now receives ready-to-send content (subject/text/html) rather than a raw booking
+ // object -- Apps Script just relays it, all templating happens here in worker.js.
  assert.equal(sentBody.action,'SEND_BOOKING_EMAIL');
- assert.equal(sentBody.booking.to,booking.email.toLowerCase());
- assert.equal(sentBody.booking.name,booking.name);
- assert.equal(sentBody.booking.appName,'Stocklist');
- assert.equal(sentBody.booking.date,booking.date);
- assert.equal(sentBody.booking.slot,booking.slot);
+ assert.equal(sentBody.to,booking.email.toLowerCase());
+ assert.match(sentBody.subject,/confirmed/i);
+ assert.match(sentBody.subject,/Stocklist/);
+ assert.ok(sentBody.text.includes(booking.name));
+ assert.ok(sentBody.text.includes('Stocklist'));
+ // The HTML "session card" includes a QR code image, a link to the session, and a link to the
+ // member dashboard -- built from url.origin, which the test request() helper sets to
+ // https://studio.test.
+ assert.ok(sentBody.html.includes('qrserver.com'));
+ assert.ok(sentBody.html.includes('https://studio.test/#/session/'));
+ assert.ok(sentBody.html.includes('https://studio.test/#/my-bookings'));
+ // Same fields as the website's downloadable session card.
+ for(const value of [booking.name,booking.phone,booking.email,booking.memberId,booking.company])assert.ok(sentBody.html.includes(value),'card is missing '+value);
+ assert.ok(sentBody.html.includes('Card reference'));
  db.close();
 });
 
@@ -195,14 +206,15 @@ test('when STUDIO_NOTIFICATION_EMAIL is set, a booking also emails the studio wi
  finally{sheets.restore()}
  assert.equal(res.status,201);
  assert.equal(sheets.calls.length,2); // visitor confirmation + studio notification
- const studioCall=sheets.calls.map(c=>JSON.parse(c.options.body)).find(b=>b.booking.to==='mcciaexplore@gmail.com');
+ const studioCall=sheets.calls.map(c=>JSON.parse(c.options.body)).find(b=>b.to==='mcciaexplore@gmail.com');
  assert.ok(studioCall,'the studio must receive its own notification email');
- assert.equal(studioCall.booking.type,'studio-notification');
- assert.equal(studioCall.booking.name,booking.name);
- assert.equal(studioCall.booking.phone,booking.phone);
- assert.equal(studioCall.booking.email,booking.email.toLowerCase());
- assert.equal(studioCall.booking.company,booking.company);
- assert.equal(studioCall.booking.memberId,booking.memberId);
+ assert.match(studioCall.subject,/New booking/i);
+ assert.ok(studioCall.text.includes(booking.name));
+ assert.ok(studioCall.text.includes(booking.phone));
+ assert.ok(studioCall.text.includes(booking.email.toLowerCase()));
+ assert.ok(studioCall.text.includes(booking.company));
+ assert.ok(studioCall.text.includes(booking.memberId));
+ assert.equal(studioCall.html,undefined); // studio notification stays plain text
  db.close();
 });
 
@@ -511,11 +523,12 @@ test('rescheduling a booking validates the new date/slot, updates it, and emails
 
  const emailCall=sheets.calls.find(c=>JSON.parse(c.options.body).action==='SEND_BOOKING_EMAIL');
  assert.ok(emailCall,'a reschedule must send an email');
- const sentBooking=JSON.parse(emailCall.options.body).booking;
- assert.equal(sentBooking.type,'reschedule');
- assert.equal(sentBooking.to,booking.email);
- assert.equal(sentBooking.date,'2026-10-07');
- assert.equal(sentBooking.slot,'15:30');
+ const sentEmail=JSON.parse(emailCall.options.body);
+ assert.equal(sentEmail.to,booking.email);
+ assert.match(sentEmail.subject,/new date\/time/i);
+ assert.ok(sentEmail.text.includes('October')); // date is formatted for reading, not the raw ISO string
+ assert.ok(sentEmail.html.includes('https://studio.test/#/session/'+created.id));
+ assert.ok(sentEmail.html.includes('RESCHEDULED'));
  db.close();
 });
 

@@ -84,9 +84,57 @@ function emailFormatDate(dateStr){
  try{return new Date(dateStr+'T12:00:00+05:30').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Kolkata'})}
  catch{return dateStr||''}
 }
-// Builds the subject/text for one of three email kinds, mirroring what Apps Script's own
-// sendBookingEmail() builds for the webhook fallback path -- kept in sync manually since they're
-// two different environments with no shared module.
+function escHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+// A free, key-less QR image service -- the recipient's mail client fetches this image directly
+// when the email is opened, same as any other remote email image. No QR library/dependency needed
+// server-side for this.
+function qrImageUrl(targetUrl){return 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data='+encodeURIComponent(targetUrl)}
+// The same "session card" the website shows after booking (dist/app.js confirmed()): dark header
+// with a status pill, QR at the top, then every booking detail, then a card-reference footer --
+// rebuilt as an inline-styled HTML email. Email clients strip <style> blocks and don't reliably
+// support flexbox/grid, so layout here is tables + inline styles only.
+function bookingCardHtml(b,{badge,intro,dateLabel,timeLabel}){
+ const base=b.origin?b.origin.replace(/\/$/,''):'';
+ const sessionUrl=base&&b.bookingId?base+'/#/session/'+b.bookingId:'';
+ const myBookingsUrl=base?base+'/#/my-bookings':'';
+ const qrUrl=sessionUrl?qrImageUrl(sessionUrl):'';
+ const fields=[['Full name',b.name],['Phone number',b.phone],['Email address',b.email],['Member ID',b.memberId],['Company',b.company],['Application',b.appName],['Date',dateLabel],['Time',timeLabel?timeLabel+' IST':'']].filter(([,v])=>v);
+ const rows=[];for(let i=0;i<fields.length;i+=2)rows.push(fields.slice(i,i+2));
+ const cell=([label,value])=>`<td valign="top" width="50%" style="padding:0 0 18px;vertical-align:top"><div style="font-size:12px;color:#878e9b;margin-bottom:5px">${escHtml(label)}</div><div style="font-size:15px;font-weight:700;color:#232b40;word-break:break-word">${escHtml(value)}</div></td>`;
+ return `<div style="background:#f4f2fb;padding:24px 12px;font-family:Arial,Helvetica,sans-serif">
+<p style="max-width:520px;margin:0 auto 16px;font-size:14px;color:#4c5262">Hi ${escHtml(b.name||'there')}, ${escHtml(intro)}</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e1e3ee;border-radius:18px;border-collapse:separate;overflow:hidden">
+ <tr><td style="background:#171b31;padding:22px 28px;border-radius:18px 18px 0 0">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+   <td style="color:#ffffff;font-size:24px;font-weight:800;line-height:1.1">MCCIA<div style="font-size:10px;font-weight:400;letter-spacing:2px;color:#bdafd8;margin-top:5px">APPLIED AI STUDIO</div></td>
+   <td align="right" style="vertical-align:middle"><span style="display:inline-block;font-size:10px;letter-spacing:1px;color:#d0ffa7;border:1px solid #6b8a55;border-radius:20px;padding:7px 11px">${escHtml(badge)}</span></td>
+  </tr></table>
+ </td></tr>
+ <tr><td style="padding:26px 28px 8px">
+  ${qrUrl?`<div style="text-align:center;padding-bottom:22px;margin-bottom:22px;border-bottom:1px solid #e8ebf0">
+   <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6647eb;margin-bottom:12px">SCAN TO VIEW YOUR SESSION</div>
+   <img src="${qrUrl}" width="170" height="170" alt="QR code linking to your session" style="display:inline-block;border:1px solid #e5e6ed;border-radius:10px;padding:10px;background:#ffffff">
+   <div style="font-size:12px;color:#7d8492;margin-top:10px;line-height:1.5">Opens your session's progress page. Shows only your name, application, date, time and progress.</div>
+  </div>`:''}
+  <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6647eb">LET'S BUILD WHAT'S NEXT</div>
+  <div style="font-size:27px;font-weight:800;color:#20233a;margin:8px 0 22px">${escHtml(b.appName)}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows.map(r=>`<tr>${r.map(cell).join('')}${r.length<2?'<td width="50%"></td>':''}</tr>`).join('')}</table>
+ </td></tr>
+ ${sessionUrl||myBookingsUrl?`<tr><td align="center" style="padding:4px 28px 24px">
+  ${sessionUrl?`<a href="${sessionUrl}" style="display:inline-block;background:#6647eb;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:13px 24px;border-radius:9px;margin:5px">View my session →</a>`:''}
+  ${myBookingsUrl?`<a href="${myBookingsUrl}" style="display:inline-block;background:#f1eefb;color:#5c46c9;text-decoration:none;font-weight:700;font-size:14px;padding:13px 24px;border-radius:9px;margin:5px">See all my bookings →</a>`:''}
+ </td></tr>`:''}
+ <tr><td style="background:#f1eefb;padding:18px 28px;border-radius:0 0 18px 18px">
+  ${b.bookingId?`<div style="font-size:12px;font-weight:700;color:#6550a7">Card reference · ${escHtml(String(b.bookingId).slice(0,8).toUpperCase())}</div>`:''}
+  <div style="font-size:12px;color:#74778c;margin-top:6px">Reserved with MCCIA Applied AI Studio. Need a change? Contact the studio.</div>
+ </td></tr>
+</table>
+</div>`;
+}
+// Builds the subject/text/html for one of three email kinds. The text/subject shape mirrors what
+// Apps Script's own sendBookingEmail() builds for the webhook fallback path (kept in sync manually
+// since they're two different environments with no shared module); the HTML "session card" is
+// this file's own addition, used for both the SMTP path here and passed through to Apps Script.
 function bookingEmailContent(b){
  const dateLabel=emailFormatDate(b.date),timeLabel=EMAIL_TIME_LABELS[b.slot]||b.slot||'';
  if(b.type==='studio-notification'){
@@ -98,7 +146,15 @@ function bookingEmailContent(b){
  return {
   subject:isReschedule?'Your MCCIA Applied AI Studio session has a new date/time — '+(b.appName||''):'Your MCCIA Applied AI Studio session is confirmed — '+(b.appName||''),
   text:'Hi '+(b.name||'there')+',\n\n'+(isReschedule?'Your session at MCCIA Applied AI Studio has been rescheduled. The new details are:\n\n':'Your session at MCCIA Applied AI Studio is reserved:\n\n')+
-   'Application: '+(b.appName||'')+'\n'+'Date: '+dateLabel+'\n'+'Time: '+timeLabel+' IST\n\n'+'See you at the studio!\n\n'+'MCCIA Applied AI Studio'
+   'Application: '+(b.appName||'')+'\n'+'Date: '+dateLabel+'\n'+'Time: '+timeLabel+' IST\n\n'+
+   (b.origin&&b.bookingId?'View your session: '+b.origin.replace(/\/$/,'')+'/#/session/'+b.bookingId+'\n':'')+
+   (b.origin?'See all your bookings: '+b.origin.replace(/\/$/,'')+'/#/my-bookings\n\n':'\n')+
+   'See you at the studio!\n\n'+'MCCIA Applied AI Studio',
+  html:bookingCardHtml(b,{
+   badge:isReschedule?'RESCHEDULED':'SESSION RESERVED',
+   intro:isReschedule?'your session at MCCIA Applied AI Studio has a new date and time:':'your session at MCCIA Applied AI Studio is reserved:',
+   dateLabel,timeLabel
+  })
  };
 }
 // Sends the visitor a booking confirmation (or reschedule notice, when booking.type==='reschedule',
@@ -108,13 +164,16 @@ function bookingEmailContent(b){
 // either way: callers must catch and log failures here rather than let them affect the booking
 // response -- confirmation email is a convenience, not authoritative data.
 async function sendBookingEmail(env,booking){
+ // Content (subject/text/html) is always built here, once, regardless of which transport ends up
+ // sending it -- Apps Script no longer does its own templating for this, it just relays whatever
+ // it's given. Keeps the "attractive session card" HTML in exactly one place.
+ const {subject,text,html}=bookingEmailContent(booking);
  if(env.sendMailSMTP){
-  const {subject,text}=bookingEmailContent(booking);
-  await env.sendMailSMTP({to:booking.to,subject,text});
+  await env.sendMailSMTP({to:booking.to,subject,text,html});
   return;
  }
  if(!env.GOOGLE_SHEETS_WEBHOOK_URL||!env.GOOGLE_SHEETS_WEBHOOK_SECRET)return;
- const res=await fetch(env.GOOGLE_SHEETS_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:env.GOOGLE_SHEETS_WEBHOOK_SECRET,action:'SEND_BOOKING_EMAIL',booking})});
+ const res=await fetch(env.GOOGLE_SHEETS_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:env.GOOGLE_SHEETS_WEBHOOK_SECRET,action:'SEND_BOOKING_EMAIL',to:booking.to,subject,text,html})});
  let data;try{data=await res.json()}catch{throw new Error('Email service returned an unexpected response.')}
  if(!res.ok||!data.success)throw new Error(data.error||'Confirmation email could not be sent.');
 }
@@ -251,7 +310,7 @@ export default {async fetch(request,env){
      if(!request.headers.get('Content-Type')?.includes('application/json'))return json({error:'JSON required.'},415);
      const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);
      let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
-     const bookingRows=(await db.prepare('SELECT app_id, app_name, name, company, email, member_id, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
+     const bookingRows=(await db.prepare('SELECT app_id, app_name, name, phone, company, email, member_id, date, slot FROM bookings WHERE id = ?').bind(bookingId).all()).results;
      if(!bookingRows.length)return json({error:'Booking not found.'},404);
      const booking=bookingRows[0];
      // Reschedule targets must still be one of the app's own scheduled date/time combinations
@@ -272,7 +331,7 @@ export default {async fetch(request,env){
      try{await upsertSheetRow(env,{bookingId,date:b.date,slot:b.slot,appName:booking.app_name,name:booking.name,company:booking.company,memberId:booking.member_id,attendance:progress.attendance,hoursCompleted:progress.hours_completed,progressStage:progress.progress_stage,progressPercent:progress.progress_percent,remarks:progress.remarks,createdAt:progress.created_at,updatedAt})}
      catch(sheetErr){console.error('Google Sheets sync failed after reschedule for booking',bookingId,String(sheetErr))}
      let emailSent=true;
-     try{await sendBookingEmail(env,{to:booking.email,name:booking.name,appName:booking.app_name,date:b.date,slot:b.slot,type:'reschedule'})}
+     try{await sendBookingEmail(env,{to:booking.email,name:booking.name,phone:booking.phone,email:booking.email,company:booking.company,memberId:booking.member_id,appName:booking.app_name,date:b.date,slot:b.slot,type:'reschedule',bookingId,origin:url.origin})}
      catch(emailErr){emailSent=false;console.error('Reschedule email failed for',bookingId,String(emailErr))}
      return json({bookingId,date:b.date,slot:b.slot,emailSent});
     }
@@ -371,7 +430,7 @@ export default {async fetch(request,env){
      catch(spErr){console.error('Failed to create session_progress for booking',id,String(spErr));return json({error:'Booking could not be completed. Please try again.'},503)}
      // Best-effort booking confirmation email to the visitor. Never blocks or fails the booking --
      // a visitor's reservation must not depend on an email provider being reachable.
-     try{await sendBookingEmail(env,{to:email,name:b.name.trim(),appName,date:b.date,slot:b.slot})}
+     try{await sendBookingEmail(env,{to:email,name:b.name.trim(),phone:b.phone.trim(),email,company:b.company.trim(),memberId:b.memberId.trim(),appName,date:b.date,slot:b.slot,bookingId:id,origin:url.origin})}
      catch(emailErr){console.error('Booking confirmation email failed for',id,String(emailErr))}
      // Best-effort notification to the studio, if configured. Unlike the visitor email, this one
      // carries every field the studio would want (phone, email, company, member ID) -- it's an

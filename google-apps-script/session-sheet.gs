@@ -45,7 +45,7 @@ function doPost(e) {
     }
 
     if (data.action === 'SEND_BOOKING_EMAIL') {
-      return sendBookingEmail(data.booking || {});
+      return sendBookingEmail(data);
     }
 
     if (data.action === 'DELETE_SESSION') {
@@ -73,67 +73,25 @@ function doPost(e) {
   }
 }
 
-// Time-slot labels matching GetMyApp's own dist/app.js timeLabels -- kept in sync manually since
-// this runs in a completely separate runtime (Apps Script) with no shared module.
-const TIME_LABELS = { '11:00': '11:00 AM – 12:00 PM', '14:30': '2:30 PM – 3:30 PM', '15:30': '3:30 PM – 4:30 PM' };
-
 /**
- * Sends one of three emails depending on b.type:
- *  - (default/undefined): booking confirmation to the VISITOR.
- *  - 'reschedule': reschedule notice to the VISITOR.
- *  - 'studio-notification': new-booking notice to the STUDIO (GetMyApp's STUDIO_NOTIFICATION_EMAIL
- *    env var), including every field the studio would want -- phone, email, company, member ID --
- *    unlike the visitor-facing emails, which never include another visitor's contact details.
- * Best-effort from GetMyApp's side in every case: a failure here is logged by the caller and never
- * blocks or fails the booking/reschedule itself. Sent from whichever Google account this Apps
- * Script project is deployed under ("Execute as: Me" in the deployment settings).
+ * Sends whatever email GetMyApp's server already built (subject/text/html) -- this script no
+ * longer does any of its own email templating. GetMyApp's server (server/worker.js) builds the
+ * full HTML "session card" (with the QR code, date/time, and links back to the site) plus a
+ * plain-text fallback, and this function just relays it via MailApp. Best-effort from GetMyApp's
+ * side: a failure here is logged by the caller and never blocks or fails the booking/reschedule
+ * itself. Sent from whichever Google account this Apps Script project is deployed under
+ * ("Execute as: Me" in the deployment settings).
  */
-function sendBookingEmail(b) {
+function sendBookingEmail(data) {
   try {
-    if (!b.to) return jsonResponse({ success: false, error: 'MISSING_RECIPIENT' });
-    const dateLabel = formatDateLabel(b.date);
-    const timeLabel = TIME_LABELS[b.slot] || b.slot || '';
-    let subject, body;
-    if (b.type === 'studio-notification') {
-      subject = 'New booking — ' + (b.appName || '') + ' · ' + (b.name || '');
-      body = 'A new session was booked at MCCIA Applied AI Studio:\n\n' +
-        'Participant: ' + (b.name || '') + '\n' +
-        'Company: ' + (b.company || '') + '\n' +
-        'Member ID: ' + (b.memberId || '') + '\n' +
-        'Phone: ' + (b.phone || '') + '\n' +
-        'Email: ' + (b.email || '') + '\n' +
-        'Application: ' + (b.appName || '') + '\n' +
-        'Date: ' + dateLabel + '\n' +
-        'Time: ' + timeLabel + ' IST\n';
-    } else {
-      const isReschedule = b.type === 'reschedule';
-      subject = isReschedule
-        ? 'Your MCCIA Applied AI Studio session has a new date/time — ' + (b.appName || '')
-        : 'Your MCCIA Applied AI Studio session is confirmed — ' + (b.appName || '');
-      body = 'Hi ' + (b.name || 'there') + ',\n\n' +
-        (isReschedule
-          ? 'Your session at MCCIA Applied AI Studio has been rescheduled. The new details are:\n\n'
-          : 'Your session at MCCIA Applied AI Studio is reserved:\n\n') +
-        'Application: ' + (b.appName || '') + '\n' +
-        'Date: ' + dateLabel + '\n' +
-        'Time: ' + timeLabel + ' IST\n\n' +
-        'See you at the studio!\n\n' +
-        'MCCIA Applied AI Studio';
-    }
-    MailApp.sendEmail({ to: b.to, subject: subject, body: body });
+    if (!data.to) return jsonResponse({ success: false, error: 'MISSING_RECIPIENT' });
+    const options = { to: data.to, subject: data.subject || '', body: data.text || '' };
+    if (data.html) options.htmlBody = data.html;
+    MailApp.sendEmail(options);
     return jsonResponse({ success: true });
   } catch (err) {
     console.error('[session-sheet] sendBookingEmail failed: ' + err);
     return jsonResponse({ success: false, error: String(err && err.message || err) });
-  }
-}
-
-function formatDateLabel(dateStr) {
-  try {
-    const d = new Date(dateStr + 'T12:00:00+05:30');
-    return Utilities.formatDate(d, 'Asia/Kolkata', 'EEEE, d MMMM yyyy');
-  } catch (e) {
-    return dateStr || '';
   }
 }
 
@@ -258,9 +216,12 @@ function testUpsertSession() {
 }
 
 /**
- * TEST HARNESS -- run this from the Apps Script editor to verify the confirmation email actually
- * sends. Edit the `to` address below to your own inbox before running. Check the execution log
- * and your inbox afterward.
+ * TEST HARNESS -- run this from the Apps Script editor to verify email sending actually works
+ * (e.g. after fixing the MailApp authorization issue). Edit the `to` address below to your own
+ * inbox before running. Check the execution log and your inbox afterward -- this should arrive as
+ * an HTML email with a purple button, matching what a real booking confirmation looks like
+ * (GetMyApp's server builds the real content; this is just a representative stand-in for testing
+ * MailApp itself).
  */
 function testSendBookingEmail() {
   const props = PropertiesService.getScriptProperties();
@@ -272,48 +233,12 @@ function testSendBookingEmail() {
   const payload = {
     secret: secret,
     action: 'SEND_BOOKING_EMAIL',
-    booking: {
-      to: 'CHANGE_ME@example.com',
-      name: 'Test Visitor',
-      appName: 'Stocklist',
-      date: '2026-10-01',
-      slot: '14:30'
-    }
+    to: 'CHANGE_ME@example.com',
+    subject: 'Test email from GetMyApp (session-sheet.gs)',
+    text: 'This is a plain-text fallback. If you can read this instead of a styled card, your email client is not rendering HTML.',
+    html: '<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:20px;background:#171b31;color:#fff;border-radius:12px;text-align:center"><h2 style="margin:0 0 8px">MailApp test succeeded</h2><p style="color:#c6b8ff;margin:0">If you can see this styled card, HTML email sending is working correctly.</p></div>'
   };
   const fakeEvent = { postData: { contents: JSON.stringify(payload) } };
   const response = doPost(fakeEvent);
   console.log('testSendBookingEmail response: ' + response.getContent());
-}
-
-/**
- * TEST HARNESS -- run this from the Apps Script editor to verify the studio's own new-booking
- * notification email sends. Edit the `to` address below (your STUDIO_NOTIFICATION_EMAIL) before
- * running. Check the execution log and that inbox afterward.
- */
-function testSendStudioNotification() {
-  const props = PropertiesService.getScriptProperties();
-  const secret = props.getProperty('GETMYAPP_WEBHOOK_SECRET');
-  if (!secret) {
-    console.log('Set the GETMYAPP_WEBHOOK_SECRET script property before running this test.');
-    return;
-  }
-  const payload = {
-    secret: secret,
-    action: 'SEND_BOOKING_EMAIL',
-    booking: {
-      to: 'CHANGE_ME@example.com',
-      type: 'studio-notification',
-      name: 'Test Visitor',
-      phone: '+91 98765 43210',
-      email: 'visitor@example.com',
-      company: 'Test Co',
-      memberId: 'MCCIA-TEST-001',
-      appName: 'Stocklist',
-      date: '2026-10-01',
-      slot: '14:30'
-    }
-  };
-  const fakeEvent = { postData: { contents: JSON.stringify(payload) } };
-  const response = doPost(fakeEvent);
-  console.log('testSendStudioNotification response: ' + response.getContent());
 }
