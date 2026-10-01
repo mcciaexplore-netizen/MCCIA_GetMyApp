@@ -316,7 +316,7 @@ function renderProgressView(){
 
 // ---- Shared attendance/progress edit form (used by the admin edit page AND the QR/public
 // session page once a staff member unlocks it inline) ----
-const attendanceOptions=['Not Marked','Present','Absent'],progressStageOptions=['Not Started','In Progress','Completed'];
+const attendanceOptions=['Not Marked','Present','Absent'],progressStageOptions=['Not Started','In Development','Deployed','Follow-up'];
 function progressEditFormHTML(form,busy,error){return `<form id="session-edit-form" class="session-edit-form">
  <label>Attendance<select name="attendance">${attendanceOptions.map(v=>`<option value="${v}" ${form.attendance===v?'selected':''}>${v}</option>`).join('')}</select></label>
  <label>Hours completed<input type="number" name="hoursCompleted" min="0" max="99.99" step="0.25" value="${form.hoursCompleted}"></label>
@@ -443,20 +443,28 @@ async function loadScheduleApps(){scheduleAppsLoading=true;editor();try{schedule
 let editorTab='dashboard',editorSessions=null,editorSessionsError='',editorSessionsLoading=false;
 let calendarViewMode='all',calendarSelectedDate='',calendarModalId=null;
 const attendanceStyles={'Not Marked':'background:#f1eefb;color:#6647eb','Present':'background:#e6f7ec;color:#1e8a4c','Absent':'background:#fdeceb;color:#c23b34'};
-const stageStyles={'Not Started':'background:#f1eefb;color:#6647eb','In Progress':'background:#fff6df;color:#a5720b','Completed':'background:#e6f7ec;color:#1e8a4c'};
+// One row per progress stage, in workflow order. Pill colors, stat tiles and calendar event
+// colors all read from here, so a stage only needs adding/renaming in one place (plus the
+// server's progressStages list in server/worker.js).
+const STAGES=[
+ {name:'Not Started',bg:'#f1eefb',fg:'#6647eb'},
+ {name:'In Development',bg:'#fff6df',fg:'#a5720b'},
+ {name:'Deployed',bg:'#e6f7ec',fg:'#1e8a4c'},
+ {name:'Follow-up',bg:'#e4f0fb',fg:'#1f6fae'}
+];
+const stageStyles=Object.fromEntries(STAGES.map(s=>[s.name,`background:${s.bg};color:${s.fg}`]));
+const stageMeta=name=>STAGES.find(s=>s.name===name)||STAGES[0];
 function todayISO(){return new Date(Date.now()+19800000).toISOString().slice(0,10)}
 // Groups dates into calendar weeks (Monday start) so the dashboard's "Week" view can show one
 // of the studio's two allocated weeks at a time.
 function weekStartOf(dateStr){const d=new Date(dateStr+'T00:00:00Z');const day=(d.getUTCDay()+6)%7;d.setUTCDate(d.getUTCDate()-day);return d.toISOString().slice(0,10);}
-function computeStageCounts(sessions){const counts={'Not Started':0,'In Progress':0,'Completed':0};for(const s of sessions)counts[s.progressStage]=(counts[s.progressStage]||0)+1;return counts;}
-// Just the four counts as label\tvalue lines -- deliberately separate from the Sessions tab's
+function computeStageCounts(sessions){const counts=Object.fromEntries(STAGES.map(s=>[s.name,0]));for(const s of sessions)counts[s.progressStage]=(counts[s.progressStage]||0)+1;return counts;}
+// Just the counts as label\tvalue lines -- deliberately separate from the Sessions tab's
 // "Copy table" (which includes names/phone/email) since this grid is summary numbers only.
-function statsGridTSV(sessions){const counts=computeStageCounts(sessions);return [['Total bookings',sessions.length],['Not Started',counts['Not Started']],['In Progress',counts['In Progress']],['Completed',counts['Completed']]].map(([label,value])=>label+'\t'+value).join('\n')}
+function statsGridTSV(sessions){const counts=computeStageCounts(sessions);return [['Total bookings',sessions.length],...STAGES.map(s=>[s.name,counts[s.name]])].map(([label,value])=>label+'\t'+value).join('\n')}
 function statsGridHTML(sessions){const counts=computeStageCounts(sessions);return `<div class="stats-toolbar"><button type="button" class="button-secondary" id="copy-stats">Copy ⧉</button><span class="copy-status" id="copy-stats-status" role="status"></span></div><div class="stats-grid">
  <div class="stat-card stat-card-total"><span class="stat-value">${sessions.length}</span><span class="stat-label">Total bookings</span></div>
- <div class="stat-card stat-card-not-started"><span class="stat-value">${counts['Not Started']}</span><span class="stat-label">Not started</span></div>
- <div class="stat-card stat-card-in-progress"><span class="stat-value">${counts['In Progress']}</span><span class="stat-label">In progress</span></div>
- <div class="stat-card stat-card-completed"><span class="stat-value">${counts['Completed']}</span><span class="stat-label">Completed</span></div>
+ ${STAGES.map(s=>`<div class="stat-card" style="background:${s.bg};border-top-color:${s.fg}"><span class="stat-value" style="color:${s.fg}">${counts[s.name]}</span><span class="stat-label">${s.name}</span></div>`).join('')}
 </div>`}
 function viewToggleHTML(){return `<div class="view-toggle" role="tablist">${[['day','Day'],['week','Week'],['all','All']].map(([key,label])=>`<button type="button" class="view-toggle-item ${calendarViewMode===key?'selected':''}" data-view-mode="${key}" role="tab" aria-selected="${calendarViewMode===key}">${label}</button>`).join('')}</div>`}
 // Google-Calendar-style detail popup for one booking, opened by clicking its chip in the
@@ -529,33 +537,103 @@ function sessionsPanelHTML(){return `<div class="editor-board"><div class="secti
  <td><div class="cell-stack"><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span><small>${s.progressPercent}% · ${s.hoursCompleted}h</small></div></td>
  <td><a class="button-secondary button-secondary-sm" href="#/editor/session/${s.id}">View →</a></td>
 </tr>`).join('')}</tbody></table></div>`:'<p>No bookings yet.</p>'):''}</div>`}
+// ---- Google-Calendar-style views for the admin Dashboard tab ----
+// Day/Week: a time grid (10 AM–5 PM, which covers every session slot) with each booking placed
+// as a block at its slot time; bookings sharing a slot sit side by side. All: a month-style grid
+// spanning every week that has a scheduled date or booking. Dates are plain YYYY-MM-DD strings
+// in IST throughout, so date math is done in UTC on those strings to avoid timezone drift.
+const CAL_START_MIN=10*60,CAL_END_MIN=17*60,CAL_HOUR_PX=56,CAL_WEEK_SLOT_CAP=3,CAL_MONTH_CELL_CAP=3;
+function addDaysISO(iso,n){const d=new Date(iso+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
+function slotMinutes(slot){const [h,m]=slot.split(':').map(Number);return h*60+m}
+function nowMinutesIST(){const d=new Date(Date.now()+19800000);return d.getUTCHours()*60+d.getUTCMinutes()}
+function isoParts(iso){const d=new Date(iso+'T12:00:00Z');return {dow:d.toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}),day:d.getUTCDate(),mon:d.toLocaleDateString('en-IN',{month:'short',timeZone:'UTC'}),year:d.getUTCFullYear()}}
+function hourLabel(min){const h=Math.floor(min/60);return (h%12||12)+(h<12?' AM':' PM')}
+function chipTime(slot){const [h,m]=slot.split(':').map(Number);return (h%12||12)+(m?':'+String(m).padStart(2,'0'):'')+(h<12?'am':'pm')}
+function calEventStyle(s){const m=stageMeta(s.progressStage);return `background:${m.bg};color:${m.fg};border-left-color:${m.fg}`}
+function calRangeTitle(start,end){const a=isoParts(start),b=isoParts(end);return a.year===b.year?`${a.day} ${a.mon} – ${b.day} ${b.mon} ${b.year}`:`${a.day} ${a.mon} ${a.year} – ${b.day} ${b.mon} ${b.year}`}
+// One day column's event blocks, positioned absolutely by slot. In week view a crowded slot
+// shows the first few plus a "+N" block that opens that day; day view shows every booking.
+function calColumnEventsHTML(date,sessions,compact){
+ const bySlot=new Map();
+ for(const s of sessions){if(!bySlot.has(s.slot))bySlot.set(s.slot,[]);bySlot.get(s.slot).push(s)}
+ return [...bySlot.entries()].map(([slot,group])=>{
+  group.sort((a,b)=>a.name.localeCompare(b.name));
+  const cap=compact&&group.length>CAL_WEEK_SLOT_CAP?CAL_WEEK_SLOT_CAP-1:group.length;
+  const shown=group.slice(0,cap),more=group.length-shown.length,cols=shown.length+(more?1:0);
+  const top=(slotMinutes(slot)-CAL_START_MIN)/60*CAL_HOUR_PX,height=CAL_HOUR_PX-3;
+  const pos=i=>`top:${top}px;height:${height}px;left:calc(${i*100/cols}% + 2px);width:calc(${100/cols}% - 4px)`;
+  return shown.map((s,i)=>`<button type="button" class="cal-event" data-booking-id="${s.id}" style="${pos(i)};${calEventStyle(s)}" title="${esc(s.name)} · ${esc(s.appName)} · ${esc(timeLabels[s.slot]||s.slot)}">
+    <span class="cal-event-title">${esc(s.name)}</span>
+    <span class="cal-event-meta">${compact?esc(s.appName):`${esc(s.appName)} · ${esc(timeLabels[s.slot]||s.slot)}${s.company?' · '+esc(s.company):''}`}</span>
+   </button>`).join('')+(more?`<button type="button" class="cal-event cal-event-more" data-cal-date="${date}" style="${pos(shown.length)}">+${more} more</button>`:'');
+ }).join('');
+}
+function calTimeGridHTML(dates,byDate){
+ const hours=[];for(let m=CAL_START_MIN;m<CAL_END_MIN;m+=60)hours.push(m);
+ const today=todayISO(),now=nowMinutesIST(),compact=dates.length>1;
+ const cols=`56px repeat(${dates.length},minmax(${compact?'92px':'0'},1fr))`;
+ return `<div class="cal-scroll"><div class="cal-timegrid" style="--cal-hour:${CAL_HOUR_PX}px;min-width:${compact?'720px':'0'}">
+  <div class="cal-head" style="grid-template-columns:${cols}">
+   <div></div>
+   ${dates.map(d=>{const p=isoParts(d),n=(byDate.get(d)||[]).length;return `<button type="button" class="cal-head-day ${d===today?'is-today':''}" data-cal-date="${d}"><span class="cal-head-dow">${p.dow}</span><span class="cal-head-num">${p.day}</span>${n?`<span class="cal-head-count">${n} booked</span>`:''}</button>`}).join('')}
+  </div>
+  <div class="cal-body" style="grid-template-columns:${cols}">
+   <div class="cal-gutter">${hours.map(m=>`<div class="cal-hour-label">${hourLabel(m)}</div>`).join('')}</div>
+   ${dates.map(d=>`<div class="cal-col ${d===today?'is-today':''}" style="height:${hours.length*CAL_HOUR_PX}px">
+    ${calColumnEventsHTML(d,byDate.get(d)||[],compact)}
+    ${d===today&&now>=CAL_START_MIN&&now<=CAL_END_MIN?`<div class="cal-now" style="top:${(now-CAL_START_MIN)/60*CAL_HOUR_PX}px"></div>`:''}
+   </div>`).join('')}
+  </div>
+ </div></div>`;
+}
+function calMonthGridHTML(start,end,byDate){
+ const today=todayISO(),weeks=[];
+ for(let w=start;w<=end;w=addDaysISO(w,7))weeks.push(w);
+ return `<div class="cal-scroll"><div class="cal-month">
+  <div class="cal-month-head">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div>${d}</div>`).join('')}</div>
+  ${weeks.map(w=>`<div class="cal-month-row">${[0,1,2,3,4,5,6].map(i=>{
+   const d=addDaysISO(w,i),p=isoParts(d),list=(byDate.get(d)||[]).slice().sort((a,b)=>a.slot.localeCompare(b.slot)||a.name.localeCompare(b.name));
+   const shown=list.length>CAL_MONTH_CELL_CAP?list.slice(0,CAL_MONTH_CELL_CAP-1):list,more=list.length-shown.length;
+   return `<div class="cal-month-cell ${d===today?'is-today':''}">
+    <button type="button" class="cal-month-date" data-cal-date="${d}">${p.day===1||d===start?p.day+' '+p.mon:p.day}</button>
+    ${shown.map(s=>`<button type="button" class="cal-chip" data-booking-id="${s.id}" title="${esc(s.name)} · ${esc(s.appName)}"><span class="cal-chip-dot" style="background:${stageMeta(s.progressStage).fg}"></span><span class="cal-chip-time">${chipTime(s.slot)}</span><span class="cal-chip-text">${esc(s.name)} · ${esc(s.appName)}</span></button>`).join('')}
+    ${more?`<button type="button" class="cal-chip cal-chip-more" data-cal-date="${d}">+${more} more</button>`:''}
+   </div>`}).join('')}</div>`).join('')}
+ </div></div>`;
+}
 function calendarPanelHTML(){
  if(!editorSessions)return `<div class="editor-board">${editorSessionsLoading?'<p role="status">Loading calendar…</p>':editorSessionsError?`<p class="error" role="alert">${esc(editorSessionsError)} <button type="button" id="retry-sessions">Try again</button></p>`:''}</div>`;
  const byDate=new Map();
  for(const s of editorSessions){if(!byDate.has(s.date))byDate.set(s.date,[]);byDate.get(s.date).push(s)}
- const allDates=[...byDate.keys()].sort();
- if(!calendarSelectedDate||!allDates.includes(calendarSelectedDate))calendarSelectedDate=allDates.find(d=>d>=todayISO())||allDates[0]||'';
- const weekStarts=[...new Set(allDates.map(weekStartOf))].sort();
- const currentWeekStart=calendarSelectedDate?weekStartOf(calendarSelectedDate):weekStarts[0];
- let visibleDates;
- if(calendarViewMode==='day')visibleDates=calendarSelectedDate?[calendarSelectedDate]:[];
- else if(calendarViewMode==='week')visibleDates=allDates.filter(d=>weekStartOf(d)===currentWeekStart);
- else visibleDates=allDates;
+ const bookingDates=[...byDate.keys()].sort(),spanDates=[...new Set([...eventDates,...bookingDates])].sort();
+ if(!calendarSelectedDate)calendarSelectedDate=bookingDates.find(d=>d>=todayISO())||(spanDates.find(d=>d>=todayISO())||spanDates[0]||todayISO());
+ let title,body;
+ if(calendarViewMode==='day'){
+  title=fullDate(calendarSelectedDate);
+  body=calTimeGridHTML([calendarSelectedDate],byDate);
+ }else if(calendarViewMode==='week'){
+  const ws=weekStartOf(calendarSelectedDate);
+  title=calRangeTitle(ws,addDaysISO(ws,6));
+  body=calTimeGridHTML([0,1,2,3,4,5,6].map(i=>addDaysISO(ws,i)),byDate);
+ }else{
+  const start=weekStartOf(spanDates[0]||todayISO()),end=weekStartOf(spanDates.at(-1)||todayISO());
+  title=calRangeTitle(start,addDaysISO(end,6));
+  body=calMonthGridHTML(start,end,byDate);
+ }
  return `<div class="editor-board">
   <div class="section-heading"><h2>Dashboard</h2><span>Across both allocated weeks</span></div>
   ${statsGridHTML(editorSessions)}
-  <div class="calendar-controls">
+  <div class="cal-toolbar">
+   <div class="cal-nav">
+    ${calendarViewMode==='all'?'':`<button type="button" class="cal-today" data-cal-nav="today">Today</button>
+    <button type="button" class="cal-arrow" data-cal-nav="prev" aria-label="Previous ${calendarViewMode}">‹</button>
+    <button type="button" class="cal-arrow" data-cal-nav="next" aria-label="Next ${calendarViewMode}">›</button>`}
+    <h3 class="cal-title">${title}</h3>
+   </div>
    ${viewToggleHTML()}
-   ${calendarViewMode==='day'?`<select id="calendar-date-select">${allDates.map(d=>`<option value="${d}" ${d===calendarSelectedDate?'selected':''}>${dateLabel(d)}</option>`).join('')}</select>`
-    :calendarViewMode==='week'?`<select id="calendar-date-select">${weekStarts.map(d=>`<option value="${d}" ${d===currentWeekStart?'selected':''}>Week of ${dateLabel(d)}</option>`).join('')}</select>`:''}
   </div>
-  ${allDates.length===0?'<p>No bookings yet.</p>':visibleDates.length===0?'<p>No bookings in this range.</p>':`<div class="calendar-grid">${visibleDates.map(date=>{
-   const daySessions=(byDate.get(date)||[]).slice().sort((a,b)=>a.slot.localeCompare(b.slot));
-   return `<div class="calendar-day">
-    <div class="calendar-day-header"><span class="calendar-day-date">${dateLabel(date)}</span><span class="calendar-day-count">${daySessions.length} ${daySessions.length===1?'booking':'bookings'}</span></div>
-    ${daySessions.length?`<ul class="calendar-day-list">${daySessions.map(s=>`<li><button type="button" class="calendar-booking-chip" data-booking-id="${s.id}"><span class="chip-time">${timeLabels[s.slot]||esc(s.slot)}</span><span class="chip-name">${esc(s.name)}</span><span class="chip-app">${esc(s.appName)}</span><span class="status-pill" style="${stageStyles[s.progressStage]||''}">${esc(s.progressStage)}</span></button></li>`).join('')}</ul>`:'<p class="calendar-day-empty">No bookings.</p>'}
-   </div>`;
-  }).join('')}</div>`}
+  ${body}
+  <div class="cal-legend">${STAGES.map(s=>`<span><i style="background:${s.fg}"></i>${s.name}</span>`).join('')}</div>
   ${calendarModalId?calendarModalHTML():''}
  </div>`;
 }
@@ -579,7 +657,14 @@ root.querySelector('#copy-stats')?.addEventListener('click',async()=>{
  setTimeout(()=>{if(status)status.textContent=''},4000);
 });
 root.querySelectorAll('[data-view-mode]').forEach(b=>b.onclick=()=>{calendarViewMode=b.dataset.viewMode;editor()});
-root.querySelector('#calendar-date-select')?.addEventListener('change',e=>{calendarSelectedDate=e.target.value;editor()});
+root.querySelectorAll('[data-cal-nav]').forEach(b=>b.onclick=()=>{
+ const nav=b.dataset.calNav,step=calendarViewMode==='week'?7:1;
+ calendarSelectedDate=nav==='today'?todayISO():addDaysISO(calendarSelectedDate,nav==='next'?step:-step);
+ editor();
+});
+// Clicking a date header, month-cell date or "+N more" drills into that single day, as in
+// Google Calendar.
+root.querySelectorAll('[data-cal-date]').forEach(b=>b.onclick=()=>{calendarSelectedDate=b.dataset.calDate;calendarViewMode='day';editor()});
 root.querySelectorAll('[data-booking-id]').forEach(b=>b.onclick=()=>{calendarModalId=b.dataset.bookingId;calendarModalStageError='';calendarModalStageMessage='';calendarModalDeleteConfirming=false;calendarModalDeleteError='';editor()});
 root.querySelector('#calendar-modal-backdrop')?.addEventListener('click',e=>{if(e.target.id==='calendar-modal-backdrop'){calendarModalId=null;editor()}});
 root.querySelector('#calendar-modal-close')?.addEventListener('click',()=>{calendarModalId=null;editor()});

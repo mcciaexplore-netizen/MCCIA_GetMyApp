@@ -295,7 +295,7 @@ test('public session GET rejects a malformed booking ID and reports a missing bo
 test('session progress update is rejected without a valid editor key',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
- const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:50,remarks:'Doing well'};
+ const update={attendance:'Present',hoursCompleted:1,progressStage:'In Development',progressPercent:50,remarks:'Doing well'};
  const noAuth=await worker.fetch(request('editor-session?id='+created.id,'PATCH',update),env);
  assert.equal(noAuth.status,401);
  const wrongKey=await worker.fetch(request('editor-session?id='+created.id,'PATCH',update,'wrong-key-that-is-not-correct-at-all'),env);
@@ -308,7 +308,7 @@ test('authenticated session progress update succeeds, validates fields, bumps up
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
  const before=db.prepare('SELECT created_at, updated_at FROM session_progress WHERE booking_id = ?').get(created.id);
 
- const validUpdate={attendance:'Present',hoursCompleted:0.75,progressStage:'In Progress',progressPercent:50,remarks:'Engaged and on track'};
+ const validUpdate={attendance:'Present',hoursCompleted:0.75,progressStage:'In Development',progressPercent:50,remarks:'Engaged and on track'};
  mock.timers.tick(60000); // advance the mocked clock so updated_at is provably later than created_at
  const sheets=mockSheetsFetch(true);
  try{
@@ -318,7 +318,7 @@ test('authenticated session progress update succeeds, validates fields, bumps up
   assert.equal(okBody.bookingId,created.id);
   assert.equal(okBody.attendance,'Present');
   assert.equal(okBody.hoursCompleted,0.75);
-  assert.equal(okBody.progressStage,'In Progress');
+  assert.equal(okBody.progressStage,'In Development');
   assert.equal(okBody.progressPercent,50);
   assert.equal(okBody.remarks,'Engaged and on track');
   assert.ok(new Date(okBody.updatedAt).getTime()>new Date(before.updated_at).getTime());
@@ -338,7 +338,7 @@ test('authenticated session progress update succeeds, validates fields, bumps up
   const row=db.prepare('SELECT * FROM session_progress WHERE booking_id = ?').get(created.id);
   assert.equal(row.attendance,'Present');
   assert.equal(row.hours_completed,0.75);
-  assert.equal(row.progress_stage,'In Progress');
+  assert.equal(row.progress_stage,'In Development');
   assert.equal(row.progress_percent,50);
   assert.equal(row.remarks,'Engaged and on track');
   assert.equal(row.created_at,before.created_at); // created_at must never change on update
@@ -365,7 +365,7 @@ test('a failed Google Sheets sync blocks the save and leaves the Supabase mirror
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
  const before=db.prepare('SELECT * FROM session_progress WHERE booking_id = ?').get(created.id);
 
- const update={attendance:'Present',hoursCompleted:2,progressStage:'Completed',progressPercent:100,remarks:'Should not persist'};
+ const update={attendance:'Present',hoursCompleted:2,progressStage:'Deployed',progressPercent:100,remarks:'Should not persist'};
  const sheets=mockSheetsFetch(false,'Simulated Sheets outage');
  try{
   const res=await worker.fetch(request('editor-session?id='+created.id,'PATCH',update,editorKey),env);
@@ -382,7 +382,7 @@ test('a failed Google Sheets sync blocks the save and leaves the Supabase mirror
 test('saving with Google Sheets not configured is rejected rather than silently succeeding',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey}; // no Sheets env vars at all
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
- const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:20,remarks:''};
+ const update={attendance:'Present',hoursCompleted:1,progressStage:'In Development',progressPercent:20,remarks:''};
  const res=await worker.fetch(request('editor-session?id='+created.id,'PATCH',update,editorKey),env);
  assert.equal(res.status,502);
  db.close();
@@ -467,7 +467,7 @@ test('member sessions requires both member ID and email, and only returns that m
 
 test('session progress update reports 404 for a booking that was never created',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey,...sheetsEnv};
- const update={attendance:'Present',hoursCompleted:1,progressStage:'In Progress',progressPercent:50,remarks:''};
+ const update={attendance:'Present',hoursCompleted:1,progressStage:'In Development',progressPercent:50,remarks:''};
  const res=await worker.fetch(request('editor-session?id=00000000-0000-4000-8000-000000000000','PATCH',update,editorKey),env);
  assert.equal(res.status,404);
  db.close();

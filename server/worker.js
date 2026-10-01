@@ -15,7 +15,7 @@ const slots = ['11:00','14:30','15:30'];
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Kept as small, easy-to-edit lists so the workflow vocabulary can change without touching logic.
 const attendanceValues = ['Not Marked','Present','Absent'];
-const progressStages = ['Not Started','In Progress','Completed'];
+const progressStages = ['Not Started','In Development','Deployed','Follow-up'];
 const appSchedule = {
  'dispatch-flow':[{date:'2026-09-28',slot:'11:00'},{date:'2026-10-06',slot:'14:30'}],
  'tendersetu':[{date:'2026-09-28',slot:'14:30'},{date:'2026-10-06',slot:'11:00'}],

@@ -203,7 +203,7 @@ function testUpsertSession() {
       memberId: 'MCCIA-TEST-001',
       attendance: 'Present',
       hoursCompleted: 0.75,
-      progressStage: 'In Progress',
+      progressStage: 'In Development',
       progressPercent: 50,
       remarks: 'Test run from testUpsertSession()',
       createdAt: new Date().toISOString(),
