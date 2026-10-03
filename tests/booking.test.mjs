@@ -27,14 +27,15 @@ test('only assigned application dates, exact slots, and valid contacts are accep
  assert.equal(isValidDate('2026-10-01',now,'tendersetu'),false);
 });
 
-test('each application receives only its assigned dates and exact time slot',async()=>{
+test('every application is open on all four slots for the 5-9 and 12-17 October dates',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db);
+ const open=['2026-10-05','2026-10-06','2026-10-07','2026-10-08','2026-10-09','2026-10-12','2026-10-13','2026-10-14','2026-10-15','2026-10-16','2026-10-17'];
  const schedule=await (await worker.fetch(request('schedule?appId=stocklist'),{DB})).json();
- assert.deepEqual(schedule.days.map(d=>d.date),['2026-10-01','2026-10-07']);
- const available=await (await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),{DB})).json();
- assert.deepEqual(available.slots.map(s=>s.time),['14:30']);
+ for(const d of open)assert.ok(schedule.days.some(x=>x.date===d),d);
+ const available=await (await worker.fetch(request('availability?date=2026-10-13&appId=tendersetu'),{DB})).json();
+ assert.deepEqual(available.slots.map(s=>s.time),['11:00','12:00','14:30','15:30']);
  assert.ok(available.slots.every(s=>s.available));
- assert.equal((await worker.fetch(request('availability?date=2026-10-01&appId=tendersetu'),{DB})).status,400);
+ assert.equal((await worker.fetch(request('availability?date=2026-10-20&appId=tendersetu'),{DB})).status,400);
  db.close();
 });
 
@@ -87,7 +88,7 @@ test('the server derives app_name from a trusted map and ignores any client-supp
 test('editor settings and booking revalidation use the new time slots',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
  assert.equal((await worker.fetch(request('editor-session'),env)).status,401);
- const settings={date:'2026-10-01',slots:['11:00','14:30','15:30'].map(time=>({time,visible:true,active:time!=='14:30'}))};
+ const settings={date:'2026-10-01',slots:['11:00','12:00','14:30','15:30'].map(time=>({time,visible:true,active:time!=='14:30'}))};
  assert.equal((await worker.fetch(request('editor-availability','PUT',settings,editorKey),env)).status,200);
  const available=await (await worker.fetch(request('availability?date=2026-10-01&appId=stocklist'),env)).json();
  assert.deepEqual(available.slots.map(s=>s.available),[false]);
@@ -100,25 +101,25 @@ test('editor settings and booking revalidation use the new time slots',async()=>
 
 test('admin can add a new date/slot for an app, which then becomes bookable and shows up everywhere the schedule is read',async()=>{
  const db=testDatabase(),DB=databaseAdapter(db),env={DB,EDITOR_ACCESS_KEY:editorKey};
- assert.equal((await worker.fetch(request('editor-schedule?appId=stocklist','POST',{appId:'stocklist',date:'2026-10-15',slot:'11:00'}),env)).status,401);
+ assert.equal((await worker.fetch(request('editor-schedule?appId=stocklist','POST',{appId:'stocklist',date:'2026-10-20',slot:'11:00'}),env)).status,401);
  // Only one of the studio's 3 standard times is accepted, and only a today-or-future date.
- assert.equal((await worker.fetch(request('editor-schedule?appId=stocklist','POST',{appId:'stocklist',date:'2026-10-15',slot:'09:00'},editorKey),env)).status,400);
- assert.equal((await worker.fetch(request('editor-schedule?appId=stocklist','POST',{appId:'unknown-app',date:'2026-10-15',slot:'11:00'},editorKey),env)).status,400);
- const created=await worker.fetch(request('editor-schedule','POST',{appId:'stocklist',date:'2026-10-15',slot:'11:00'},editorKey),env);
+ assert.equal((await worker.fetch(request('editor-schedule?appId=stocklist','POST',{appId:'stocklist',date:'2026-10-20',slot:'09:00'},editorKey),env)).status,400);
+ assert.equal((await worker.fetch(request('editor-schedule?appId=stocklist','POST',{appId:'unknown-app',date:'2026-10-20',slot:'11:00'},editorKey),env)).status,400);
+ const created=await worker.fetch(request('editor-schedule','POST',{appId:'stocklist',date:'2026-10-20',slot:'11:00'},editorKey),env);
  assert.equal(created.status,201);
  const createdBody=await created.json();
- assert.ok(createdBody.schedule.some(e=>e.date==='2026-10-15'&&e.slot==='11:00'&&e.custom===true));
- assert.ok(createdBody.dates.includes('2026-10-15'));
+ assert.ok(createdBody.schedule.some(e=>e.date==='2026-10-20'&&e.slot==='11:00'&&e.custom===true));
+ assert.ok(createdBody.dates.includes('2026-10-20'));
  // Adding the exact same date/slot again is rejected as a duplicate.
- assert.equal((await worker.fetch(request('editor-schedule','POST',{appId:'stocklist',date:'2026-10-15',slot:'11:00'},editorKey),env)).status,409);
+ assert.equal((await worker.fetch(request('editor-schedule','POST',{appId:'stocklist',date:'2026-10-20',slot:'11:00'},editorKey),env)).status,409);
  // The new date/slot is now visible to visitors through the normal public routes.
  const schedule=await (await worker.fetch(request('schedule?appId=stocklist'),{DB})).json();
- assert.ok(schedule.days.some(d=>d.date==='2026-10-15'));
- const availability=await (await worker.fetch(request('availability?date=2026-10-15&appId=stocklist'),{DB})).json();
+ assert.ok(schedule.days.some(d=>d.date==='2026-10-20'));
+ const availability=await (await worker.fetch(request('availability?date=2026-10-20&appId=stocklist'),{DB})).json();
  assert.deepEqual(availability.slots.map(s=>s.time),['11:00']);
  assert.equal(availability.slots[0].available,true);
  // And it's actually bookable end to end.
- const res=await worker.fetch(request('bookings','POST',{...booking,date:'2026-10-15',slot:'11:00'}),{DB});
+ const res=await worker.fetch(request('bookings','POST',{...booking,date:'2026-10-20',slot:'11:00'}),{DB});
  assert.equal(res.status,201);
  db.close();
 });
@@ -504,7 +505,7 @@ test('rescheduling a booking validates the new date/slot, updates it, and emails
  const created=await (await worker.fetch(request('bookings','POST',booking),{DB})).json();
 
  assert.equal((await worker.fetch(request('editor-booking?id='+created.id,'PATCH',{date:'2026-10-07',slot:'15:30'}),env)).status,401);
- assert.equal((await worker.fetch(request('editor-booking?id='+created.id,'PATCH',{date:'2026-10-07',slot:'11:00'},editorKey),env)).status,400); // not a valid combo for stocklist
+ assert.equal((await worker.fetch(request('editor-booking?id='+created.id,'PATCH',{date:'2026-10-20',slot:'11:00'},editorKey),env)).status,400); // not a scheduled date for stocklist
  assert.equal((await worker.fetch(request('editor-booking?id='+created.id,'PATCH',{date:booking.date,slot:booking.slot},editorKey),env)).status,400); // already current
 
  const sheets=mockSheetsFetch(true);

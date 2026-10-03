@@ -46,6 +46,8 @@ Landing motion plays automatically and honors reduced-motion preferences. The or
 
 ## Current schedule
 
+**Update:** every application is also open on all four daily slots (11:00, 12:00, 14:30, 15:30) on 5, 6, 7, 8, 9, 12, 13, 14, 15, 16 and 17 October 2026. This is added on top of the dates below (the `appSchedule` loop in `server/worker.js` and `dist/app.js`); existing entries are kept.
+
 All sessions are in **2026**. The first week uses 28, 29, and 30 September plus 1 and 3 October; the second week uses every weekday from 5 to 9 October. Each application that appears in both weeks changes both weekday and time slot. The schedule assigns 2, 3, 2, 3, and 3 applications across the first week’s five dates, then 3 applications on each weekday of the second week. When the database cannot be reached, the UI displays the assigned planned dates and slots; visitors can still generate their local session card, which does not reserve the selected slot.
 
 ## Application trailers

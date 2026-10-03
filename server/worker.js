@@ -11,7 +11,7 @@ const appNames = {
 // not a distinct-company count -- company is free text (typos/casing vary) and isn't a safe key
 // to dedupe on.
 const SESSION_CAPACITY = 3;
-const slots = ['11:00','14:30','15:30'];
+const slots = ['11:00','12:00','14:30','15:30'];
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Kept as small, easy-to-edit lists so the workflow vocabulary can change without touching logic.
 const attendanceValues = ['Not Marked','Present','Absent'];
@@ -31,6 +31,10 @@ const appSchedule = {
  'ai-procurement-agent':[{date:'2026-10-03',slot:'14:30'},{date:'2026-10-08',slot:'15:30'}],
  'production-saathi':[{date:'2026-10-03',slot:'15:30'},{date:'2026-10-05',slot:'14:30'}]
 };
+// Every app is also open on all all four slots on these October 2026 dates (existing entries are kept).
+for(const date of ['2026-10-05','2026-10-06','2026-10-07','2026-10-08','2026-10-09','2026-10-12','2026-10-13','2026-10-14','2026-10-15','2026-10-16','2026-10-17'])
+ for(const id of Object.keys(appSchedule))for(const slot of slots)
+  if(!appSchedule[id].some(e=>e.date===date&&e.slot===slot))appSchedule[id].push({date,slot});
 const eventDates = [...new Set(Object.values(appSchedule).flat().map(({date})=>date))].sort();
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}})}
 export function isValidDate(date,now=new Date(),appId=null){
@@ -78,7 +82,7 @@ async function upsertSheetRow(env,session){
  if(!res.ok||!data.success)throw new Error(data.error||'Google Sheets sync failed.');
  return true;
 }
-const EMAIL_TIME_LABELS={'11:00':'11:00 AM – 12:00 PM','14:30':'2:30 PM – 3:30 PM','15:30':'3:30 PM – 4:30 PM'};
+const EMAIL_TIME_LABELS={'11:00':'11:00 AM – 12:00 PM','12:00':'12:00 PM – 1:00 PM','14:30':'2:30 PM – 3:30 PM','15:30':'3:30 PM – 4:30 PM'};
 function emailFormatDate(dateStr){
  try{return new Date(dateStr+'T12:00:00+05:30').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Kolkata'})}
  catch{return dateStr||''}
@@ -233,7 +237,7 @@ export default {async fetch(request,env){
      const raw=await request.text();if(raw.length>4096)return json({error:'Request too large.'},413);let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
      if(!validApps.has(b.appId))return json({error:'Choose a valid application.'},400);
      if(typeof b.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(b.date)||!isFutureDate(b.date))return json({error:'Choose today or a future date.'},400);
-     if(typeof b.slot!=='string'||!slots.includes(b.slot))return json({error:'Choose one of the studio\'s three session times.'},400);
+     if(typeof b.slot!=='string'||!slots.includes(b.slot))return json({error:'Choose one of the studio\'s four session times.'},400);
      const existing=await resolveAppSchedule(db,b.appId);
      if(existing.some(e=>e.date===b.date&&e.slot===b.slot))return json({error:'This application already has a session at that date and time.'},409);
      await db.prepare('INSERT INTO app_schedule_extra (app_id, date, slot, created_at) VALUES (?, ?, ?, ?)').bind(b.appId,b.date,b.slot,new Date().toISOString()).run();

@@ -211,3 +211,15 @@ button.danger:disabled{opacity:.6;cursor:default}
    top line (landing hides .nav entirely, so it needs its own link). */
 .landing-topline a{color:#d7d5ee;text-decoration:none}
 .landing-topline a:hover{color:#fff}
+
+.intro-actions{display:flex;flex-direction:column;align-items:flex-end;gap:12px}
+.book-cta{display:inline-flex;align-items:center;gap:8px;text-decoration:none;white-space:nowrap}
+.app-switch{display:inline-flex;flex-direction:column;gap:6px;margin-top:14px;font-size:13px;font-weight:600}
+.app-switch select{padding:10px 12px;border:1px solid #d9dbe6;border-radius:10px;font:inherit;background:#fff}
+@media (max-width:700px){.intro-actions{align-items:flex-start}}
+.app-checks{border:0;padding:0;margin:14px 0 24px;display:flex;flex-wrap:wrap;gap:10px;min-width:0}
+.app-check{display:inline-flex;align-items:center;gap:8px;border:1px solid #dce0e8;background:#fff;color:#626a79;border-radius:24px;padding:10px 17px;font-size:14px;cursor:pointer;transition:background .2s,border-color .2s,color .2s}
+.app-check:hover{border-color:#8d76e8;color:#6647eb}
+.app-check:has(input:checked){background:#6647eb;border-color:#6647eb;color:#fff}
+.app-check input{width:15px;height:15px;margin:0;accent-color:#fff}
+.app-check:focus-within{outline:2px solid #8d76e8;outline-offset:2px}
